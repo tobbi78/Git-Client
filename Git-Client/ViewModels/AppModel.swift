@@ -1,0 +1,88 @@
+//
+//  AppModel.swift
+//  Git-Client
+//
+
+import SwiftUI
+import Observation
+
+@Observable
+@MainActor
+final class AppModel {
+    private let store = BookmarkStore()
+
+    var bookmarkNodes: [BookmarkNode] = []
+    var openedRepository: RepositoryBookmark? = nil
+    var repositoryViewModel: RepositoryViewModel? = nil
+
+    init() {
+        bookmarkNodes = store.load()
+    }
+
+    // MARK: - Persistenz
+
+    private func persist() {
+        store.save(bookmarkNodes)
+    }
+
+    // MARK: - Lesezeichen-Mutationen
+
+    func addRepository(name: String, path: URL) {
+        let bookmark = RepositoryBookmark(name: name, path: path)
+        bookmarkNodes.append(.repository(bookmark))
+        persist()
+    }
+
+    func addFolder(name: String) {
+        bookmarkNodes.append(.folder(BookmarkFolder(name: name)))
+        persist()
+    }
+
+    func rename(id: UUID, to newName: String) {
+        bookmarkNodes.rename(id: id, to: newName)
+        persist()
+    }
+
+    func move(id: UUID, toFolder folderID: UUID?) {
+        bookmarkNodes.move(id: id, toFolder: folderID)
+        persist()
+    }
+
+    func delete(id: UUID) {
+        bookmarkNodes.remove(id: id)
+        persist()
+    }
+
+    // MARK: - Navigation
+
+    func openRepository(_ bookmark: RepositoryBookmark) {
+        openedRepository = bookmark
+        let vm = RepositoryViewModel(repository: bookmark)
+        repositoryViewModel = vm
+        Task { await vm.load() }
+    }
+
+    func closeRepository() {
+        openedRepository = nil
+        repositoryViewModel = nil
+    }
+
+    // MARK: - NSOpenPanel
+
+    func promptAddRepository() {
+        let panel = NSOpenPanel()
+        panel.title = "Repository auswählen"
+        panel.message = "Wähle einen Ordner mit einem Git-Repository"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let dotGit = url.appendingPathComponent(".git")
+        guard FileManager.default.fileExists(atPath: dotGit.path) else { return }
+
+        addRepository(name: url.lastPathComponent, path: url)
+    }
+}

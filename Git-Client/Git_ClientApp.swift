@@ -6,27 +6,22 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct Git_ClientApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var appModel = AppModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                if let repository = appModel.openedRepository {
+                    MainWindowView(repository: repository)
+                } else {
+                    RepositoryBrowserView()
+                }
+            }
+            .environment(appModel)
         }
-        .modelContainer(sharedModelContainer)
+        .defaultSize(width: 1200, height: 780)
     }
 }

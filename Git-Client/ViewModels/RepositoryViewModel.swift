@@ -2,7 +2,7 @@
 //  RepositoryViewModel.swift
 //  Git-Client
 //
-//  Hält den Ladezustand und die geladenen Daten (Commits, später Branches/Tags)
+//  Hält den Ladezustand und die geladenen Daten (Commits, Branches, Tags)
 //  für das aktuell geöffnete Repository.
 //
 
@@ -16,10 +16,11 @@ final class RepositoryViewModel {
     private let service: GitService
 
     var commits: [Commit] = []
+    var branches: [Branch] = []
+    var tags: [GitTag] = []
     var isLoading = false
     var errorMessage: String? = nil
 
-    // Ausgewählter Commit für die Detail-/Diff-Ansicht
     var selectedCommitID: String? = nil
 
     var selectedCommit: Commit? {
@@ -36,7 +37,12 @@ final class RepositoryViewModel {
         isLoading = true
         errorMessage = nil
         do {
-            commits = try await service.loadCommits()
+            async let commitsTask = service.loadCommits()
+            async let branchesTask = service.loadBranches()
+            async let tagsTask = service.loadTags()
+            commits = try await commitsTask
+            branches = try await branchesTask
+            tags = try await tagsTask
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -3,7 +3,7 @@
 //  Git-Client
 //
 //  Dreispaltiges NavigationSplitView für ein geöffnetes Repository.
-//  Sidebar: Branches/Tags (Schritt 6). Mitte: Commit-Liste (jetzt) → Graph (Schritt 7).
+//  Sidebar: Branches/Tags. Mitte: Commit-Liste (→ Graph in Schritt 7).
 //  Detail: Commit + Diff (Schritt 8).
 //
 
@@ -37,22 +37,58 @@ struct MainWindowView: View {
         }
     }
 
-    // MARK: - Sidebar (Platzhalter — Schritt 6)
+    // MARK: - Sidebar
 
     private var sidebar: some View {
         List {
-            Section("Branches") {
-                Label("wird in Schritt 6 geladen", systemImage: "arrow.triangle.branch")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            Section("Tags") {
-                Label("wird in Schritt 6 geladen", systemImage: "tag")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
+            localBranchesSection
+            remoteBranchesSections
+            tagsSection
         }
         .listStyle(.sidebar)
+    }
+
+    @ViewBuilder
+    private var localBranchesSection: some View {
+        let local = vm?.branches.filter { !$0.isRemote } ?? []
+        Section("Branches") {
+            if local.isEmpty {
+                Text(vm == nil ? "Wird geladen…" : "Keine Branches")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            } else {
+                ForEach(local) { branch in
+                    BranchRowView(branch: branch, isLocal: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var remoteBranchesSections: some View {
+        let remote = vm?.branches.filter { $0.isRemote } ?? []
+        let remoteNames = Array(Set(remote.compactMap(\.remoteName))).sorted()
+        ForEach(remoteNames, id: \.self) { remoteName in
+            let branches = remote.filter { $0.remoteName == remoteName }
+            Section("Remotes / \(remoteName)") {
+                ForEach(branches) { branch in
+                    BranchRowView(branch: branch, isLocal: false)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tagsSection: some View {
+        let allTags = vm?.tags ?? []
+        if !allTags.isEmpty {
+            Section("Tags") {
+                ForEach(allTags) { tag in
+                    Label(tag.name, systemImage: "tag")
+                        .font(.callout)
+                }
+            }
+        }
     }
 
     // MARK: - Commit-Historie
@@ -61,7 +97,7 @@ struct MainWindowView: View {
     private var commitHistory: some View {
         if let vm {
             if vm.isLoading {
-                ProgressView("Commits werden geladen…")
+                ProgressView("Wird geladen…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = vm.errorMessage {
                 ContentUnavailableView(
@@ -106,6 +142,28 @@ struct MainWindowView: View {
     }
 }
 
+// MARK: - Branch-Zeile
+
+private struct BranchRowView: View {
+    let branch: Branch
+    let isLocal: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: branch.isCurrent ? "arrow.right.circle.fill" : "arrow.triangle.branch")
+                .foregroundStyle(branch.isCurrent ? Color.accentColor : Color.secondary)
+                .font(.callout)
+            Text(isLocal ? branch.name : branch.shortName)
+                .font(.callout)
+                .fontWeight(branch.isCurrent ? .semibold : .regular)
+            Spacer()
+            Text(branch.tipSha)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
 // MARK: - Commit-Zeile
 
 private struct CommitRowView: View {
@@ -120,15 +178,12 @@ private struct CommitRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            // Ref-Badges (Branch-/Tag-Namen)
             if !commit.refNames.isEmpty {
                 refBadges
             }
-            // Commit-Nachricht
             Text(commit.subject)
                 .lineLimit(1)
                 .font(.body)
-            // Meta-Zeile
             HStack(spacing: 8) {
                 Text(commit.shortSha)
                     .font(.system(.caption, design: .monospaced))

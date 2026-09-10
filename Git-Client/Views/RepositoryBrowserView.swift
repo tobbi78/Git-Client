@@ -5,8 +5,9 @@
 //  Sourcetree-artiger Lesezeichen-Browser.
 //
 //  Baum-Darstellung via ScrollView + rekursivem BookmarkNodeView (KEIN NSOutlineView).
-//  NSOutlineView (List/OutlineGroup auf macOS) fängt Mouse-Events vor SwiftUI ab und
-//  verhindert so zuverlässiges Drag & Drop. Der eigene ScrollView-Baum umgeht das komplett.
+//  NSOutlineView (List/OutlineGroup auf macOS) fängt Mouse-Events vor SwiftUI ab.
+//
+//  Drag & Drop: .draggable/.dropDestination (modernes Transferable-API), kein NSItemProvider.
 //
 
 import SwiftUI
@@ -144,9 +145,8 @@ private struct BookmarkNodeView: View {
     @State private var isHovered = false
     @Environment(AppModel.self) private var appModel
 
-    private static let dragType = UTType(exportedAs: "de.tobias.florian.git-client.bookmark-drag")
-    private static let indent: CGFloat = 18
     private static let rowPaddingV: CGFloat = 5
+    private static let indentPerLevel: CGFloat = 18
 
     var body: some View {
         switch node {
@@ -157,7 +157,7 @@ private struct BookmarkNodeView: View {
         }
     }
 
-    // MARK: Repository-Zeile
+    // MARK: - Repository-Zeile
 
     private func repoRow(_ repo: RepositoryBookmark) -> some View {
         HStack(spacing: 8) {
@@ -176,21 +176,24 @@ private struct BookmarkNodeView: View {
             }
             Spacer()
         }
-        .padding(.leading, leadingPadding + Self.indent)
+        .padding(.leading, leadingPadding + Self.indentPerLevel)
         .padding(.trailing, 8)
         .padding(.vertical, Self.rowPaddingV)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.35) : Color.clear)
+                .fill(isHovered
+                      ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.35)
+                      : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { appModel.openRepository(repo) }
-        .onDrag { dragProvider(for: node.id) }
-        .contextMenu { contextMenuItems(for: node) }
+        // Transferable-basiertes Drag: UUID-String als einfacher Text
+        .draggable(node.id.uuidString)
+        .contextMenu { repoContextMenu(node: node, repo: repo) }
     }
 
-    // MARK: Ordner-Sektion
+    // MARK: - Ordner-Sektion
 
     private func folderSection(_ folder: BookmarkFolder) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -229,77 +232,39 @@ private struct BookmarkNodeView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(dragTargetFolderID == folder.id
                       ? Color.accentColor.opacity(0.15)
-                      : isHovered ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.35) : Color.clear)
+                      : isHovered
+                        ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.35)
+                        : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
         }
-        .onDrop(
-            of: [Self.dragType],
-            isTargeted: Binding(
-                get: { dragTargetFolderID == folder.id },
-                set: { active in dragTargetFolderID = active ? folder.id : nil }
-            )
-        ) { providers in
-            guard let provider = providers.first else { return false }
-            provider.loadDataRepresentation(forTypeIdentifier: Self.dragType.identifier) { data, _ in
-                guard let data,
-                      let str = String(data: data, encoding: .utf8),
-                      let uuid = UUID(uuidString: str) else { return }
-                Task { @MainActor in appModel.move(id: uuid, toFolder: folder.id) }
-            }
+        // Drop-Ziel: akzeptiert UUID-Strings (von .draggable oben)
+        .dropDestination(for: String.self) { items, _ in
+            guard let uuidString = items.first,
+                  let uuid = UUID(uuidString: uuidString) else { return false }
+            appModel.move(id: uuid, toFolder: folder.id)
             return true
+        } isTargeted: { targeted in
+            dragTargetFolderID = targeted ? folder.id : nil
         }
-        .contextMenu { contextMenuItems(for: .folder(folder)) }
+        .contextMenu { folderContextMenu(node: .folder(folder)) }
     }
 
-    // MARK: Hilfsmethoden
-
-    private var leadingPadding: CGFloat {
-        CGFloat(depth) * Self.indent + 8
-    }
-
-    private func dragProvider(for id: UUID) -> NSItemProvider {
-        let provider = NSItemProvider()
-        provider.registerDataRepresentation(
-            forTypeIdentifier: Self.dragType.identifier,
-            visibility: .all
-        ) { completion in
-            completion(id.uuidString.data(using: .utf8), nil)
-            return nil
-        }
-        return provider
-    }
+    // MARK: - Kontextmenüs (getrennt, kein let in ViewBuilder)
 
     @ViewBuilder
-    private func contextMenuItems(for node: BookmarkNode) -> some View {
+    private func repoContextMenu(node: BookmarkNode, repo: RepositoryBookmark) -> some View {
         Button("Umbenennen") {
             onRequestRename(node.id, node.displayName)
         }
 
-        if case .repository = node {
-            let folders = appModel.bookmarkNodes.allFolders()
-            Menu("In Ordner verschieben") {
-                Button("Auf Root-Ebene") {
-                    appModel.move(id: node.id, toFolder: nil)
-                }
-                if !folders.isEmpty {
-                    Divider()
-                    ForEach(folders) { folder in
-                        Button(folder.name) {
-                            appModel.move(id: node.id, toFolder: folder.id)
-                        }
-                    }
-                }
-            }
-        }
+        moveMenu(for: node)
 
-        if case .repository(let repo) = node {
-            Button("Im Finder zeigen") {
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path.path)
-            }
+        Button("Im Finder zeigen") {
+            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path.path)
         }
 
         Divider()
@@ -307,6 +272,43 @@ private struct BookmarkNodeView: View {
         Button("Löschen", role: .destructive) {
             appModel.delete(id: node.id)
         }
+    }
+
+    @ViewBuilder
+    private func folderContextMenu(node: BookmarkNode) -> some View {
+        Button("Umbenennen") {
+            onRequestRename(node.id, node.displayName)
+        }
+
+        Divider()
+
+        Button("Löschen", role: .destructive) {
+            appModel.delete(id: node.id)
+        }
+    }
+
+    // Eigenständige View-func damit kein `let` in @ViewBuilder nötig ist
+    private func moveMenu(for node: BookmarkNode) -> some View {
+        let folders = appModel.bookmarkNodes.allFolders()
+        return Menu("In Ordner verschieben") {
+            Button("Auf Root-Ebene") {
+                appModel.move(id: node.id, toFolder: nil)
+            }
+            if !folders.isEmpty {
+                Divider()
+                ForEach(folders) { folder in
+                    Button(folder.name) {
+                        appModel.move(id: node.id, toFolder: folder.id)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Hilfsmethode
+
+    private var leadingPadding: CGFloat {
+        CGFloat(depth) * Self.indentPerLevel + 8
     }
 }
 

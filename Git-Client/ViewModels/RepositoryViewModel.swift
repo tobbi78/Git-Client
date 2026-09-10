@@ -16,6 +16,7 @@ final class RepositoryViewModel {
     private let service: GitService
 
     var commits: [Commit] = []
+    var graphRows: [GraphRow] = []
     var branches: [Branch] = []
     var tags: [GitTag] = []
     var isLoading = false
@@ -43,6 +44,7 @@ final class RepositoryViewModel {
             commits = try await commitsTask
             branches = try await branchesTask
             tags = try await tagsTask
+            graphRows = CommitGraphBuilder.build(from: commits)
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -120,13 +120,20 @@ struct MainWindowView: View {
         }
     }
 
+    private static let rowHeight: CGFloat = 48
+
     private func commitList(vm: RepositoryViewModel) -> some View {
-        List(vm.commits, selection: Binding(
+        List(vm.graphRows, id: \.commit.id, selection: Binding(
             get: { vm.selectedCommitID },
             set: { vm.selectedCommitID = $0 }
-        )) { commit in
-            CommitRowView(commit: commit)
-                .tag(commit.id)
+        )) { row in
+            HStack(spacing: 0) {
+                CommitGraphView(row: row, rowHeight: Self.rowHeight)
+                CommitRowView(commit: row.commit)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: Self.rowHeight)
+            .tag(row.commit.id)
         }
         .listStyle(.plain)
     }

@@ -53,9 +53,29 @@ final class AppModel {
         persist()
     }
 
+    func updateRepositoryPath(id: UUID, newPath: URL) {
+        bookmarkNodes.updateRepositoryPath(id: id, newPath: newPath)
+        persist()
+    }
+
+    func promptUpdateRepositoryPath(id: UUID) {
+        let panel = NSOpenPanel()
+        panel.title = "Neuen Pfad wählen"
+        panel.message = "Wähle den neuen Speicherort des Git-Repositories"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let dotGit = url.appendingPathComponent(".git")
+        guard FileManager.default.fileExists(atPath: dotGit.path) else { return }
+        updateRepositoryPath(id: id, newPath: url)
+    }
+
     // MARK: - Navigation
 
     func openRepository(_ bookmark: RepositoryBookmark) {
+        guard FileManager.default.fileExists(atPath: bookmark.path.path) else { return }
         openedRepository = bookmark
         let vm = RepositoryViewModel(repository: bookmark)
         repositoryViewModel = vm

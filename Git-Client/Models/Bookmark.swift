@@ -146,6 +146,21 @@ extension [BookmarkNode] {
         }
     }
 
+    /// Aktualisiert den Pfad eines Repository-Lesezeichens mit der gegebenen ID.
+    mutating func updateRepositoryPath(id: UUID, newPath: URL) {
+        for i in indices {
+            if case .repository(var repo) = self[i], repo.id == id {
+                repo.path = newPath
+                self[i] = .repository(repo)
+                return
+            }
+            if case .folder(var folder) = self[i] {
+                folder.children.updateRepositoryPath(id: id, newPath: newPath)
+                self[i] = .folder(folder)
+            }
+        }
+    }
+
     private mutating func insert(_ node: BookmarkNode, intoFolderWithID folderID: UUID) {
         for i in indices {
             if case .folder(var folder) = self[i] {

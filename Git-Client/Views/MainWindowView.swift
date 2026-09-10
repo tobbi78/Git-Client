@@ -15,6 +15,16 @@ struct MainWindowView: View {
 
     private var vm: RepositoryViewModel? { appModel.repositoryViewModel }
 
+    private var subtitleText: String {
+        guard let vm else { return repository.path.path }
+        if vm.isLoading { return "Wird geladen…" }
+        let count = vm.commits.count
+        let branch = vm.branches.first(where: \.isCurrent)?.name ?? ""
+        if count == 0 { return repository.path.path }
+        let commitLabel = count == 1 ? "1 Commit" : "\(count) Commits"
+        return branch.isEmpty ? commitLabel : "\(branch)  ·  \(commitLabel)"
+    }
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -26,13 +36,20 @@ struct MainWindowView: View {
             commitDetail
         }
         .navigationTitle(repository.name)
-        .navigationSubtitle(repository.path.path)
+        .navigationSubtitle(subtitleText)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button("Repositories", systemImage: "chevron.left") {
                     appModel.closeRepository()
                 }
                 .help("Zurück zur Repository-Übersicht")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Neu laden", systemImage: "arrow.clockwise") {
+                    Task { await vm?.load() }
+                }
+                .disabled(vm?.isLoading ?? true)
+                .help("Commits, Branches und Tags neu laden")
             }
         }
     }

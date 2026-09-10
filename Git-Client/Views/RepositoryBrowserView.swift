@@ -160,14 +160,16 @@ private struct BookmarkNodeView: View {
     // MARK: - Repository-Zeile
 
     private func repoRow(_ repo: RepositoryBookmark) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "externaldrive")
+        let pathExists = FileManager.default.fileExists(atPath: repo.path.path)
+        return HStack(spacing: 8) {
+            Image(systemName: pathExists ? "externaldrive" : "externaldrive.badge.exclamationmark")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(pathExists ? Color.secondary : Color.orange)
             VStack(alignment: .leading, spacing: 1) {
                 Text(repo.name)
                     .font(.callout)
                     .lineLimit(1)
+                    .foregroundStyle(pathExists ? Color.primary : Color.secondary)
                 Text(repo.path.path)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -175,22 +177,27 @@ private struct BookmarkNodeView: View {
                     .truncationMode(.middle)
             }
             Spacer()
+            if !pathExists {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .help("Repository-Ordner nicht gefunden. Pfad im Kontextmenü aktualisieren.")
+            }
         }
         .padding(.leading, leadingPadding + Self.indentPerLevel)
         .padding(.trailing, 8)
         .padding(.vertical, Self.rowPaddingV)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered
+                .fill(isHovered && pathExists
                       ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.35)
                       : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .onTapGesture { appModel.openRepository(repo) }
-        // Transferable-basiertes Drag: UUID-String als einfacher Text
+        .onTapGesture { if pathExists { appModel.openRepository(repo) } }
         .draggable(node.id.uuidString)
-        .contextMenu { repoContextMenu(node: node, repo: repo) }
+        .contextMenu { repoContextMenu(node: node, repo: repo, pathExists: pathExists) }
     }
 
     // MARK: - Ordner-Sektion
@@ -256,15 +263,21 @@ private struct BookmarkNodeView: View {
     // MARK: - Kontextmenüs (getrennt, kein let in ViewBuilder)
 
     @ViewBuilder
-    private func repoContextMenu(node: BookmarkNode, repo: RepositoryBookmark) -> some View {
+    private func repoContextMenu(node: BookmarkNode, repo: RepositoryBookmark, pathExists: Bool) -> some View {
         Button("Umbenennen") {
             onRequestRename(node.id, node.displayName)
         }
 
         moveMenu(for: node)
 
-        Button("Im Finder zeigen") {
-            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path.path)
+        if pathExists {
+            Button("Im Finder zeigen") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path.path)
+            }
+        } else {
+            Button("Pfad aktualisieren…") {
+                appModel.promptUpdateRepositoryPath(id: repo.id)
+            }
         }
 
         Divider()

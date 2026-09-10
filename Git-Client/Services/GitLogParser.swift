@@ -11,7 +11,7 @@ import Foundation
 enum GitLogParser {
     // Format-String für git log:
     // sha \x1f shortSha \x1f parents \x1f author \x1f email \x1f isoDate \x1f refNames \x1f subject \x1f body \x1e
-    static let formatString = "%H\u{1f}%h\u{1f}%P\u{1f}%an\u{1f}%ae\u{1f}%aI\u{1f}%D\u{1f}%s\u{1f}%b\u{1e}"
+    nonisolated static let formatString = "%H\u{1f}%h\u{1f}%P\u{1f}%an\u{1f}%ae\u{1f}%aI\u{1f}%D\u{1f}%s\u{1f}%b\u{1e}"
 
     nonisolated(unsafe) private static let dateFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()

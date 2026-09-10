@@ -103,4 +103,14 @@ actor GitService {
                 return GitTag(name: fields[0], targetSha: fields[1])
             }
     }
+
+    // MARK: - Diff
+
+    func loadDiff(sha: String) async throws -> CommitDiff {
+        let output = try await runner.runOrThrow(
+            ["show", "--format=", "--patch", sha],
+            workingDirectory: repositoryPath
+        )
+        return DiffParser.parse(output, sha: sha)
+    }
 }

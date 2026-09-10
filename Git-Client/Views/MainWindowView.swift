@@ -23,7 +23,7 @@ struct MainWindowView: View {
             commitHistory
                 .navigationSplitViewColumnWidth(min: 320, ideal: 560)
         } detail: {
-            detailPlaceholder
+            commitDetail
         }
         .navigationTitle(repository.name)
         .navigationSubtitle(repository.path.path)
@@ -138,14 +138,23 @@ struct MainWindowView: View {
         .listStyle(.plain)
     }
 
-    // MARK: - Detail (Platzhalter — Schritt 8)
+    // MARK: - Detail
 
-    private var detailPlaceholder: some View {
-        ContentUnavailableView(
-            "Kein Commit ausgewählt",
-            systemImage: "doc.text.magnifyingglass",
-            description: Text("Wähle einen Commit, um Details und Diff anzuzeigen.")
-        )
+    @ViewBuilder
+    private var commitDetail: some View {
+        if let commit = vm?.selectedCommit {
+            DiffView(
+                commit: commit,
+                diff: vm?.currentDiff,
+                isLoading: vm?.isDiffLoading ?? false
+            )
+        } else {
+            ContentUnavailableView(
+                "Kein Commit ausgewählt",
+                systemImage: "doc.text.magnifyingglass",
+                description: Text("Wähle einen Commit, um Details und Diff anzuzeigen.")
+            )
+        }
     }
 }
 

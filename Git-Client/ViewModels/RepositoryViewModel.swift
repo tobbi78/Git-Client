@@ -22,12 +22,17 @@ final class RepositoryViewModel {
     var isLoading = false
     var errorMessage: String? = nil
 
-    var selectedCommitID: String? = nil
+    var selectedCommitID: String? = nil {
+        didSet { if let id = selectedCommitID { Task { await loadDiff(for: id) } } }
+    }
 
     var selectedCommit: Commit? {
         guard let id = selectedCommitID else { return nil }
         return commits.first { $0.id == id }
     }
+
+    var currentDiff: CommitDiff? = nil
+    var isDiffLoading = false
 
     init(repository: RepositoryBookmark) {
         self.repository = repository
@@ -49,5 +54,16 @@ final class RepositoryViewModel {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func loadDiff(for sha: String) async {
+        isDiffLoading = true
+        currentDiff = nil
+        do {
+            currentDiff = try await service.loadDiff(sha: sha)
+        } catch {
+            // Diff-Fehler still ignorieren — Commit bleibt auswählbar
+        }
+        isDiffLoading = false
     }
 }

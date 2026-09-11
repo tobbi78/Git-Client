@@ -66,6 +66,9 @@ final class RepositoryViewModel {
             commits = try await commitsTask
             branches = try await branchesTask
             tags = try await tagsTask
+            // Branch-Tips, die außerhalb des geladenen Fensters liegen, einzeln nachladen.
+            // Das passiert bei großen Repos oder alten Feature-Branches.
+            await loadMissingBranchTips()
             graphRows = CommitGraphBuilder.build(from: commits)
         } catch {
             errorMessage = error.localizedDescription
@@ -73,6 +76,32 @@ final class RepositoryViewModel {
         hasRemote = await service.hasRemote()
         await refreshAheadBehind()
         isLoading = false
+    }
+
+    /// Lädt Branch-Tip-Commits nach, die noch nicht in `commits` enthalten sind.
+    private func loadMissingBranchTips() async {
+        let loadedSHAs = Set(commits.map(\.sha))
+        let missingTips = branches
+            .map(\.tipSha)
+            .filter { !loadedSHAs.contains($0) }
+        guard !missingTips.isEmpty else { return }
+
+        var additional: [Commit] = []
+        // Parallel nachladen — jeder Aufruf ist ein schnelles lokales `git log -1`
+        await withTaskGroup(of: Commit?.self) { group in
+            for sha in missingTips {
+                group.addTask { await self.service.loadSingleCommit(sha: sha) }
+            }
+            for await commit in group {
+                if let c = commit { additional.append(c) }
+            }
+        }
+        guard !additional.isEmpty else { return }
+        // Deduplizieren, nach Datum einordnen, damit der Graph-Algorithmus korrekte Reihenfolge hat
+        let existing = Set(commits.map(\.sha))
+        let unique = additional.filter { !existing.contains($0.sha) }
+        commits.append(contentsOf: unique)
+        commits.sort { $0.date > $1.date }
     }
 
     // MARK: - Remote-Sync

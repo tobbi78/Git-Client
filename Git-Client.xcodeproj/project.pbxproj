@@ -27,6 +27,7 @@
 		89299C003052E48600FC7F81 /* Git-Client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Git-Client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		89299C0F3052E48700FC7F81 /* Git-ClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Git-ClientTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		89299C193052E48700FC7F81 /* Git-ClientUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Git-ClientUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		898A0D89305409F2005B1735 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AppIcon.icns; path = "Git-Client/AppIcon.icns"; sourceTree = "<group>"; };
 		89EEE6523053C6AF003923E1 /* Git-Client.help */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "Git-Client.help"; path = "Git-Client/Help/Git-Client.help"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -76,6 +77,7 @@
 		89299BF73052E48600FC7F81 = {
 			isa = PBXGroup;
 			children = (
+				898A0D89305409F2005B1735 /* AppIcon.icns */,
 				89EEE6523053C6AF003923E1 /* Git-Client.help */,
 				89299C023052E48600FC7F81 /* Git-Client */,
 				89299C123052E48700FC7F81 /* Git-ClientTests */,

@@ -23,6 +23,8 @@
     <string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <!-- Apple Help Book -->
     <key>CFBundleHelpBookFolder</key>
     <string>Git-Client.help</string>

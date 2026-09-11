@@ -16,6 +16,7 @@ import UniformTypeIdentifiers
 struct RepositoryBrowserView: View {
     @Environment(AppModel.self) private var appModel
 
+    @State private var isCloning = false
     @State private var isAddingFolder = false
     @State private var newFolderName = ""
     @State private var isRenaming = false
@@ -35,6 +36,7 @@ struct RepositoryBrowserView: View {
             .navigationTitle("Repositories")
             .toolbar { toolbarContent }
         }
+        .sheet(isPresented: $isCloning) { CloneRepositoryView() }
         .sheet(isPresented: $isAddingFolder) { newFolderSheet }
         .sheet(isPresented: $isRenaming) { renameSheet }
     }
@@ -80,6 +82,12 @@ struct RepositoryBrowserView: View {
             Button("Repository hinzufügen", systemImage: "plus") {
                 appModel.promptAddRepository()
             }
+        }
+        ToolbarItem(placement: .secondaryAction) {
+            Button("Klonen", systemImage: "arrow.down.to.line.circle") {
+                isCloning = true
+            }
+            .help("Remote-Repository klonen")
         }
         ToolbarItem(placement: .secondaryAction) {
             Button("Neuer Ordner", systemImage: "folder.badge.plus") {

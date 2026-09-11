@@ -33,6 +33,31 @@ final class AppModel {
         persist()
     }
 
+    /// Klont ein Remote-Repository und legt ein Bookmark an.
+    /// Das Passwort/Token wird NICHT in bookmarks.json gespeichert — ausschließlich im Keychain.
+    func cloneRepository(
+        remoteURL: String,
+        to localPath: URL,
+        name: String,
+        username: String?,
+        password: String?
+    ) async throws {
+        let service = GitService(repositoryPath: localPath)
+        try await service.clone(remoteURL: remoteURL, to: localPath, username: username, password: password)
+
+        let bookmark = RepositoryBookmark(
+            name: name,
+            path: localPath,
+            remoteURL: remoteURL,
+            username: username.flatMap { $0.isEmpty ? nil : $0 }
+        )
+        if let pass = password, !pass.isEmpty {
+            KeychainStore.save(pass, for: bookmark.id)
+        }
+        bookmarkNodes.append(.repository(bookmark))
+        persist()
+    }
+
     func addFolder(name: String) {
         bookmarkNodes.append(.folder(BookmarkFolder(name: name)))
         persist()

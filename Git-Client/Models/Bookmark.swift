@@ -14,11 +14,16 @@ struct RepositoryBookmark: Identifiable, Hashable, Codable {
     var id: UUID
     var name: String
     var path: URL
+    // Sicher persistierbar (kein Geheimnis):
+    var remoteURL: String?   // HTTPS-Remote für geklonte Repos
+    var username: String?    // HTTPS-Benutzername — Passwort/Token NUR im Keychain
 
-    init(id: UUID = UUID(), name: String, path: URL) {
+    init(id: UUID = UUID(), name: String, path: URL, remoteURL: String? = nil, username: String? = nil) {
         self.id = id
         self.name = name
         self.path = path
+        self.remoteURL = remoteURL
+        self.username = username
     }
 }
 

@@ -16,6 +16,10 @@ struct MainWindowView: View {
     @Environment(AppModel.self) private var appModel
     let repository: RepositoryBookmark
 
+    @State private var isBranchesExpanded = false
+    @State private var isTagsExpanded = false
+    @State private var expandedRemotes: [String: Bool] = [:]
+
     private var vm: RepositoryViewModel? { appModel.repositoryViewModel }
 
     private var subtitleText: String {
@@ -73,7 +77,7 @@ struct MainWindowView: View {
     @ViewBuilder
     private var localBranchesSection: some View {
         let local = vm?.branches.filter { !$0.isRemote } ?? []
-        Section("Branches") {
+        DisclosureGroup(isExpanded: $isBranchesExpanded) {
             if local.isEmpty {
                 Text(vm == nil ? "Wird geladen…" : "Keine Branches")
                     .foregroundStyle(.secondary)
@@ -83,6 +87,9 @@ struct MainWindowView: View {
                     branchNodeRow(node)
                 }
             }
+        } label: {
+            Label("Branches", systemImage: "arrow.triangle.branch")
+                .font(.callout.weight(.semibold))
         }
     }
 
@@ -92,12 +99,22 @@ struct MainWindowView: View {
         let remoteNames = Array(Set(remote.compactMap(\.remoteName))).sorted()
         ForEach(remoteNames, id: \.self) { remoteName in
             let branches = remote.filter { $0.remoteName == remoteName }
-            Section("Remotes / \(remoteName)") {
+            DisclosureGroup(isExpanded: remoteBinding(for: remoteName)) {
                 ForEach(buildBranchTree(branches, nameOf: \.shortName)) { node in
                     branchNodeRow(node)
                 }
+            } label: {
+                Label("Remotes / \(remoteName)", systemImage: "network")
+                    .font(.callout.weight(.semibold))
             }
         }
+    }
+
+    private func remoteBinding(for name: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedRemotes[name] ?? true },
+            set: { expandedRemotes[name] = $0 }
+        )
     }
 
     @ViewBuilder
@@ -149,13 +166,16 @@ struct MainWindowView: View {
     private var tagsSection: some View {
         let allTags = vm?.tags ?? []
         if !allTags.isEmpty {
-            Section("Tags") {
+            DisclosureGroup(isExpanded: $isTagsExpanded) {
                 ForEach(allTags) { tag in
                     Label(tag.name, systemImage: "tag")
                         .font(.callout)
                         .contentShape(Rectangle())
                         .onTapGesture { vm?.selectCommit(bySha: tag.targetSha) }
                 }
+            } label: {
+                Label("Tags", systemImage: "tag")
+                    .font(.callout.weight(.semibold))
             }
         }
     }

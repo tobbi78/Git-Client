@@ -25,8 +25,7 @@ struct CloneRepositoryView: View {
     private var canClone: Bool {
         !remoteURL.trimmingCharacters(in: .whitespaces).isEmpty &&
         localParentPath != nil &&
-        !effectiveName.isEmpty &&
-        !isCloning
+        !effectiveName.isEmpty
     }
 
     private var effectiveName: String {
@@ -38,11 +37,23 @@ struct CloneRepositoryView: View {
     }
 
     var body: some View {
+        Group {
+            if isCloning {
+                cloningOverlay
+            } else {
+                form
+            }
+        }
+        .frame(minWidth: 480)
+    }
+
+    // MARK: - Formular
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Repository klonen")
                 .font(.headline)
 
-            // Remote URL
             LabeledContent("Remote URL") {
                 TextField("https://github.com/owner/repo.git", text: $remoteURL)
                     .textFieldStyle(.roundedBorder)
@@ -53,7 +64,6 @@ struct CloneRepositoryView: View {
                     }
             }
 
-            // Zielordner
             LabeledContent("Zielordner") {
                 HStack {
                     Text(localParentPath?.path ?? "Kein Ordner gewählt")
@@ -65,7 +75,6 @@ struct CloneRepositoryView: View {
                 }
             }
 
-            // Name des Ordners
             LabeledContent("Ordnername") {
                 TextField(
                     URL(string: remoteURL)?.deletingPathExtension().lastPathComponent ?? "repo",
@@ -76,7 +85,6 @@ struct CloneRepositoryView: View {
 
             Divider()
 
-            // Credentials (optional — für private Repos)
             Group {
                 Text("Zugangsdaten (optional, nur für private Repositories)")
                     .font(.caption)
@@ -93,7 +101,6 @@ struct CloneRepositoryView: View {
                 }
             }
 
-            // Fehlermeldung
             if let error = errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -107,18 +114,54 @@ struct CloneRepositoryView: View {
                 Button("Abbrechen") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                if isCloning {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .padding(.trailing, 4)
-                }
                 Button("Klonen") { startClone() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canClone)
             }
         }
         .padding(24)
-        .frame(minWidth: 480)
+    }
+
+    // MARK: - Fortschritts-Overlay
+
+    private var cloningOverlay: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            ProgressView()
+                .controlSize(.large)
+                .padding(.bottom, 4)
+
+            VStack(spacing: 8) {
+                Text("Klonen läuft…")
+                    .font(.headline)
+
+                Text(remoteURL)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .truncationMode(.middle)
+
+                if let parent = localParentPath {
+                    Text("→ \(parent.appendingPathComponent(effectiveName).path)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            Text("Bitte warten. Bei großen Repositories kann dies einige Minuten dauern.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+
+            Spacer()
+        }
+        .padding(40)
+        .frame(minHeight: 260)
     }
 
     // MARK: - Aktionen
@@ -152,8 +195,8 @@ struct CloneRepositoryView: View {
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
+                isCloning = false
             }
-            isCloning = false
         }
     }
 }

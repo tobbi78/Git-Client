@@ -63,7 +63,7 @@ actor GitService {
     // MARK: - Branches
 
     func loadBranches() async throws -> [Branch] {
-        let format = "%(refname)\t%(objectname:short)\t%(HEAD)"
+        let format = "%(refname)\t%(objectname)\t%(HEAD)"  // voller SHA, kein :short
         let output = try await runner.runOrThrow(
             ["for-each-ref", "--format=\(format)", "refs/heads", "refs/remotes"],
             workingDirectory: repositoryPath
@@ -109,7 +109,7 @@ actor GitService {
     func loadTags() async throws -> [GitTag] {
         // %(*objectname:short) liefert den dereferenzierten Commit-SHA bei annotierten Tags;
         // bei Lightweight-Tags ist es leer → Fallback auf %(objectname:short)
-        let format = "%(refname:short)\t%(objectname:short)\t%(*objectname:short)"
+        let format = "%(refname:short)\t%(objectname)\t%(*objectname)"  // volle SHAs, kein :short
         let output = try await runner.runOrThrow(
             ["for-each-ref", "--format=\(format)", "refs/tags"],
             workingDirectory: repositoryPath

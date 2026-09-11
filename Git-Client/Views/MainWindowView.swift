@@ -386,7 +386,7 @@ private struct BranchRowView: View {
                 .font(.callout)
                 .fontWeight(branch.isCurrent ? .semibold : .regular)
             Spacer()
-            Text(branch.tipSha)
+            Text(String(branch.tipSha.prefix(7)))
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }

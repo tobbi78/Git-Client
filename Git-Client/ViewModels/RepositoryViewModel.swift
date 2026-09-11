@@ -139,8 +139,12 @@ final class RepositoryViewModel {
     /// Scrollt auch dann, wenn der Commit bereits ausgewählt war (wiederholter Klick,
     /// oder Remote-Branch zeigt auf denselben Commit wie der lokale Branch).
     func selectCommit(bySha sha: String) {
-        guard let commit = commits.first(where: { $0.sha.hasPrefix(sha) }) else {
-            // Tip-Commit ist nicht in den geladenen Commits (z.B. jenseits des Limit).
+        // Exaktes Matching zuerst (voller SHA), dann Präfix-Fallback (Kurz-SHA).
+        let commit = commits.first(where: { $0.sha == sha })
+                  ?? commits.first(where: { $0.sha.hasPrefix(sha) })
+        guard let commit else {
+            // Während eines Ladevorgangs kann der Stand noch veraltet sein — kein Fehler.
+            guard !isLoading else { return }
             branchJumpMessage = "Commit dieses Branches ist nicht in den geladenen Commits."
             Task {
                 try? await Task.sleep(for: .seconds(3))

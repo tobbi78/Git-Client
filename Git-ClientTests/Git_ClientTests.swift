@@ -701,6 +701,295 @@ struct BookmarkStoreTests {
     }
 }
 
+// MARK: - GitError
+
+@Suite("GitError")
+struct GitErrorTests {
+
+    @Test("gitNotFound hat nicht-leere Fehlermeldung")
+    func gitNotFoundDescription() {
+        #expect(GitError.gitNotFound.errorDescription?.isEmpty == false)
+    }
+
+    @Test("notARepository hat nicht-leere Fehlermeldung")
+    func notARepositoryDescription() {
+        #expect(GitError.notARepository.errorDescription?.isEmpty == false)
+    }
+
+    @Test("nonZeroExit enthält Exit-Code in der Meldung")
+    func nonZeroExitCode() {
+        let err = GitError.nonZeroExit(code: 128, stderr: "")
+        #expect(err.errorDescription?.contains("128") == true)
+    }
+
+    @Test("nonZeroExit enthält Stderr in der Meldung")
+    func nonZeroExitStderr() {
+        let err = GitError.nonZeroExit(code: 1, stderr: "fatal: not a git repository")
+        #expect(err.errorDescription?.contains("fatal: not a git repository") == true)
+    }
+}
+
+// MARK: - GitService Integration
+
+private func sh(_ args: String...) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = args
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+}
+
+@Suite("GitService Integration")
+@MainActor
+struct GitServiceIntegrationTests {
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("git-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        let readme = repoURL.appendingPathComponent("README.md")
+        try "# Test\n".write(to: readme, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+    }
+
+    @Test("validateRepository erkennt gültiges Repository")
+    func validateValid() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        try await svc.validateRepository()
+    }
+
+    @Test("validateRepository wirft für ungültiges Verzeichnis")
+    func validateInvalid() async throws {
+        let notRepo = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notrepo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: notRepo, withIntermediateDirectories: true)
+        let svc = GitService(repositoryPath: notRepo)
+        do {
+            try await svc.validateRepository()
+            Issue.record("validateRepository hätte werfen sollen")
+        } catch is GitError {
+            // erwartet
+        }
+    }
+
+    @Test("loadCommits liefert Initial-Commit")
+    func loadCommitsNonEmpty() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        #expect(!commits.isEmpty)
+        #expect(commits[0].subject == "Initial commit")
+        #expect(commits[0].sha.count == 40)
+    }
+
+    @Test("loadBranches liefert aktuellen Branch")
+    func loadBranchesHasCurrentBranch() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let branches = try await svc.loadBranches()
+        let hasCurrent = branches.contains { $0.isCurrent }
+        #expect(!branches.isEmpty)
+        #expect(hasCurrent)
+    }
+
+    @Test("loadBranches: tipSha ist 40-stellig")
+    func branchTipShaIsFullLength() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let branches = try await svc.loadBranches()
+        let allFull = branches.allSatisfy { $0.tipSha.count == 40 }
+        #expect(allFull)
+    }
+
+    @Test("Branch-tipSha stimmt mit Commit-SHA überein")
+    func branchTipMatchesCommit() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        let branches = try await svc.loadBranches()
+        let commitSHAs = Set(commits.map { $0.sha })
+        for branch in branches where !branch.isRemote {
+            let tipSha = branch.tipSha
+            #expect(commitSHAs.contains(tipSha))
+        }
+    }
+
+    @Test("loadTags gibt leeres Array für Repo ohne Tags")
+    func loadTagsEmpty() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let tags = try await svc.loadTags()
+        #expect(tags.isEmpty)
+    }
+
+    @Test("loadTags liefert annotierten Tag")
+    func loadTagsWithAnnotated() async throws {
+        try sh("git", "-C", repoURL.path, "tag", "-a", "v1.0", "-m", "Release 1.0")
+        let svc = GitService(repositoryPath: repoURL)
+        let tags = try await svc.loadTags()
+        let hasV1 = tags.contains { $0.name == "v1.0" }
+        #expect(hasV1)
+    }
+
+    @Test("loadDiff liefert CommitDiff für bekannten SHA")
+    func loadDiffForCommit() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        guard let firstSha = commits.first?.sha else { Issue.record("Kein Commit"); return }
+        let diff = try await svc.loadDiff(sha: firstSha)
+        let diffSha = diff.sha
+        #expect(diffSha == firstSha)
+    }
+
+    @Test("hasRemote gibt false zurück ohne konfigurierten Remote")
+    func hasRemoteFalse() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let result = await svc.hasRemote()
+        #expect(!result)
+    }
+
+    @Test("remoteName gibt nil zurück ohne konfigurierten Remote")
+    func remoteNameNil() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let name = try await svc.remoteName()
+        #expect(name == nil)
+    }
+
+    @Test("aheadBehind gibt nil zurück ohne Upstream")
+    func aheadBehindNoUpstream() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let result = try await svc.aheadBehind()
+        #expect(result == nil)
+    }
+
+    @Test("loadSingleCommit liefert Commit für bekannten SHA")
+    func loadSingleCommitBySha() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        guard let first = commits.first else { Issue.record("Kein Commit"); return }
+        let firstSha = first.sha
+        let firstSubject = first.subject
+        let single = await svc.loadSingleCommit(sha: firstSha)
+        let singleSha = single?.sha
+        let singleSubject = single?.subject
+        #expect(singleSha == firstSha)
+        #expect(singleSubject == firstSubject)
+    }
+
+    @Test("loadSingleCommit gibt nil für unbekannten SHA")
+    func loadSingleCommitUnknownSha() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let result = await svc.loadSingleCommit(sha: String(repeating: "0", count: 40))
+        #expect(result == nil)
+    }
+}
+
+// MARK: - RepositoryViewModel
+
+@Suite("RepositoryViewModel")
+@MainActor
+struct RepositoryViewModelTests {
+
+    private func makeBookmark() -> RepositoryBookmark {
+        RepositoryBookmark(name: "test", path: URL(fileURLWithPath: "/tmp/nonexistent"))
+    }
+
+    @Test("selectedCommit ist nil ohne Auswahl")
+    func selectedCommitNilInitially() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        #expect(vm.selectedCommitID == nil)
+        #expect(vm.selectedCommit == nil)
+    }
+
+    @Test("selectCommit(bySha:) wählt Commit per vollem SHA aus")
+    func selectByFullSha() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha)]
+        vm.selectCommit(bySha: sha)
+        #expect(vm.selectedCommitID == sha)
+    }
+
+    @Test("selectCommit(bySha:) wählt Commit per Kurzform-SHA aus")
+    func selectByShortSha() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha)]
+        vm.selectCommit(bySha: "abc123ab")
+        #expect(vm.selectedCommitID == sha)
+    }
+
+    @Test("selectCommit(bySha:) setzt scrollTargetID auf den gefundenen Commit")
+    func selectSetsScrollTarget() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha)]
+        vm.selectCommit(bySha: sha)
+        #expect(vm.scrollTargetID == sha)
+    }
+
+    @Test("selectCommit(bySha:) erhöht scrollRequestToken")
+    func selectIncrementsToken() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha)]
+        vm.selectCommit(bySha: sha)
+        #expect(vm.scrollRequestToken == 1)
+    }
+
+    @Test("selectCommit(bySha:) erhöht Token bei wiederholtem Klick auf denselben Commit")
+    func selectSameShaIncrementsTokenTwice() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha)]
+        vm.selectCommit(bySha: sha)
+        vm.selectCommit(bySha: sha)
+        #expect(vm.scrollRequestToken == 2)
+    }
+
+    @Test("selectCommit(bySha:) setzt branchJumpMessage für fehlenden Commit")
+    func selectMissingCommitSetsMessage() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        vm.commits = []
+        vm.selectCommit(bySha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbee1")
+        #expect(vm.branchJumpMessage != nil)
+        #expect(vm.selectedCommitID == nil)
+        #expect(vm.scrollRequestToken == 0)
+    }
+
+    @Test("selectCommit(bySha:) setzt keine Meldung während isLoading")
+    func selectMissingDuringLoadingNoMessage() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        vm.commits = []
+        vm.isLoading = true
+        vm.selectCommit(bySha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbee1")
+        #expect(vm.branchJumpMessage == nil)
+        #expect(vm.selectedCommitID == nil)
+    }
+
+    @Test("selectedCommit gibt richtigen Commit nach selectCommit zurück")
+    func selectedCommitAfterSelect() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha, subject: "Wichtiger Fix")]
+        vm.selectCommit(bySha: sha)
+        #expect(vm.selectedCommit?.sha == sha)
+        #expect(vm.selectedCommit?.subject == "Wichtiger Fix")
+    }
+
+    @Test("Präfix-Matching bevorzugt exakten Treffer bei Ambiguität")
+    func exactMatchPreferredOverPrefix() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        let sha1 = "abc1230000000000000000000000000000000001"
+        let sha2 = "abc123abc123abc123abc123abc123abc123abc1"
+        vm.commits = [makeCommit(sha: sha1), makeCommit(sha: sha2)]
+        vm.selectCommit(bySha: sha2) // exakter Treffer
+        #expect(vm.selectedCommitID == sha2)
+    }
+}
+
 // MARK: - GitService (parseBranches / parseTags)
 
 @Suite("GitService Parser")

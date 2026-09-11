@@ -79,10 +79,8 @@ struct MainWindowView: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
             } else {
-                ForEach(local) { branch in
-                    BranchRowView(branch: branch, isLocal: true)
-                        .contentShape(Rectangle())
-                        .onTapGesture { vm?.selectCommit(bySha: branch.tipSha) }
+                ForEach(buildBranchTree(local, nameOf: \.name)) { node in
+                    branchNodeRow(node)
                 }
             }
         }
@@ -95,12 +93,55 @@ struct MainWindowView: View {
         ForEach(remoteNames, id: \.self) { remoteName in
             let branches = remote.filter { $0.remoteName == remoteName }
             Section("Remotes / \(remoteName)") {
-                ForEach(branches) { branch in
-                    BranchRowView(branch: branch, isLocal: false)
-                        .contentShape(Rectangle())
-                        .onTapGesture { vm?.selectCommit(bySha: branch.tipSha) }
+                ForEach(buildBranchTree(branches, nameOf: \.shortName)) { node in
+                    branchNodeRow(node)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func branchNodeRow(_ node: BranchTreeNode) -> some View {
+        switch node {
+        case .leaf(let leaf):
+            BranchRowView(branch: leaf.branch, displayName: leaf.displayName)
+                .contentShape(Rectangle())
+                .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
+        case .folder(let folderName, let children):
+            DisclosureGroup {
+                ForEach(children) { leaf in
+                    BranchRowView(branch: leaf.branch, displayName: leaf.displayName)
+                        .contentShape(Rectangle())
+                        .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
+                }
+            } label: {
+                Label(folderName, systemImage: "folder")
+                    .font(.callout)
+            }
+        }
+    }
+
+    private func buildBranchTree(_ branches: [Branch], nameOf: (Branch) -> String) -> [BranchTreeNode] {
+        var folderMap: [String: [BranchLeaf]] = [:]
+        var topLevel: [BranchLeaf] = []
+
+        for branch in branches {
+            let name = nameOf(branch)
+            if let slashIdx = name.firstIndex(of: "/") {
+                let folderName = String(name[..<slashIdx])
+                let childName = String(name[name.index(after: slashIdx)...])
+                folderMap[folderName, default: []].append(BranchLeaf(branch: branch, displayName: childName))
+            } else {
+                topLevel.append(BranchLeaf(branch: branch, displayName: name))
+            }
+        }
+
+        var nodes = topLevel.map { BranchTreeNode.leaf($0) }
+        for (folderName, children) in folderMap {
+            nodes.append(.folder(name: folderName, children: children))
+        }
+        return nodes.sorted {
+            $0.sortKey.localizedCaseInsensitiveCompare($1.sortKey) == .orderedAscending
         }
     }
 
@@ -208,14 +249,14 @@ struct MainWindowView: View {
 
 private struct BranchRowView: View {
     let branch: Branch
-    let isLocal: Bool
+    let displayName: String
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: branch.isCurrent ? "arrow.right.circle.fill" : "arrow.triangle.branch")
                 .foregroundStyle(branch.isCurrent ? Color.accentColor : Color.secondary)
                 .font(.callout)
-            Text(isLocal ? branch.name : branch.shortName)
+            Text(displayName)
                 .font(.callout)
                 .fontWeight(branch.isCurrent ? .semibold : .regular)
             Spacer()
@@ -281,6 +322,33 @@ private struct CommitRowView: View {
         if ref.hasPrefix("tag:") { return .purple }
         if ref.hasPrefix("origin/") { return .green }
         return .blue
+    }
+}
+
+// MARK: - Branch-Baum-Typen
+
+private struct BranchLeaf: Identifiable {
+    let branch: Branch
+    let displayName: String
+    var id: String { branch.id }
+}
+
+private enum BranchTreeNode: Identifiable {
+    case leaf(BranchLeaf)
+    case folder(name: String, children: [BranchLeaf])
+
+    var id: String {
+        switch self {
+        case .leaf(let l): return l.id
+        case .folder(let name, _): return "folder:\(name)"
+        }
+    }
+
+    var sortKey: String {
+        switch self {
+        case .leaf(let l): return l.displayName
+        case .folder(let name, _): return name
+        }
     }
 }
 

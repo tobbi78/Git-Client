@@ -27,6 +27,7 @@
 		89299C003052E48600FC7F81 /* Git-Client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Git-Client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		89299C0F3052E48700FC7F81 /* Git-ClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Git-ClientTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		89299C193052E48700FC7F81 /* Git-ClientUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Git-ClientUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		89EEE6523053C6AF003923E1 /* Git-Client.help */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = "Git-Client.help"; path = "Git-Client/Help/Git-Client.help"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +76,7 @@
 		89299BF73052E48600FC7F81 = {
 			isa = PBXGroup;
 			children = (
+				89EEE6523053C6AF003923E1 /* Git-Client.help */,
 				89299C023052E48600FC7F81 /* Git-Client */,
 				89299C123052E48700FC7F81 /* Git-ClientTests */,
 				89299C1C3052E48700FC7F81 /* Git-ClientUITests */,
@@ -401,7 +403,8 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Git-Client/Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -433,7 +436,8 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Git-Client/Info.plist";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (

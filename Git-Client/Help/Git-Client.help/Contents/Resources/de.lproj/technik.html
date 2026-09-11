@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="AppleTitle" content="Git-Client-Hilfe">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Technische Implementierung — Git-Client-Hilfe</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="breadcrumb">
+    <a href="index.html">Git-Client-Hilfe</a> › Teil B — Technische Implementierung
+</nav>
+
+<h1>
+    Teil B — Technische Implementierung
+    <span class="subtitle">Architektur, Algorithmen und Design-Entscheidungen</span>
+</h1>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="architektur">Architektur-Überblick</h2>
+
+<p>
+    Git-Client ist eine native macOS-App auf Basis von <strong>SwiftUI</strong> und
+    <strong>Swift Concurrency</strong> (async/await). Die Codebasis folgt einer
+    strikten Schichtenarchitektur:
+</p>
+
+<pre>
+Views (SwiftUI)
+  └─ ViewModels  (@Observable, @MainActor)
+       └─ Services  (actor-isoliert)
+            └─ GitCore  (GitRunner, GitError)
+</pre>
+
+<h3>Actor-Isolation</h3>
+<p>
+    Das Build-Setting <code>SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor</code> stellt
+    sicher, dass alle Typen ohne explizite Annotation automatisch auf dem Main Actor
+    laufen — ein klarer Sicherheitspuffer gegen Data Races in SwiftUI-State-Updates.
+</p>
+<ul>
+    <li><strong>Views</strong> — reine SwiftUI-<code>View</code>-Structs,
+        kein direkter Datenbankzugriff.</li>
+    <li><strong>ViewModels</strong> — <code>@Observable @MainActor final class</code>;
+        halten den UI-Zustand und delegieren I/O an Services.</li>
+    <li><strong>Services</strong> — <code>actor</code>; führen git-Kommandos und
+        Parsing durch.</li>
+    <li><strong>GitCore</strong> — <code>actor GitRunner</code> als einziger Eintrittspunkt
+        für git-Subprozesse; <code>GitError</code> als typisierte Fehler-Enum.</li>
+</ul>
+<p>
+    Statische Properties, die aus non-isolated Kontexten (z.B. <code>actor</code>)
+    aufgerufen werden, tragen die Annotation <code>nonisolated</code> (z.B.
+    <code>GitLogParser.formatString</code>, <code>CommitGraphBuilder.laneColors</code>).
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="gitrunner">GitRunner <code style="font-size:0.8em">GitCore/GitRunner.swift</code></h2>
+
+<p>
+    <code>actor GitRunner</code> ist der zentrale async-Wrapper um
+    <code>Foundation.Process</code> und <code>Pipe</code>. Er startet
+    git-Subprozesse, liest stdout/stderr asynchron aus und liefert das Ergebnis
+    als <code>GitResult</code> zurück.
+</p>
+
+<pre>
+struct GitResult {
+    let stdout:   String
+    let stderr:   String
+    let exitCode: Int32
+}
+</pre>
+
+<h4>Kernmethoden</h4>
+<table>
+    <tr><th>Methode</th><th>Verhalten</th></tr>
+    <tr>
+        <td><code>run(_:workingDirectory:)</code></td>
+        <td>Führt git mit den gegebenen Argumenten aus; gibt immer ein
+            <code>GitResult</code> zurück (wirft nicht).</td>
+    </tr>
+    <tr>
+        <td><code>runOrThrow(_:workingDirectory:)</code></td>
+        <td>Wie <code>run</code>, wirft <code>GitError.gitFailed</code> bei
+            Exit-Code ≠ 0; gibt den reinen stdout-String zurück.</td>
+    </tr>
+</table>
+
+<h4>Design-Entscheidungen</h4>
+<ul>
+    <li>Das <code>actor</code>-Modell garantiert serielle Ausführung aller
+        git-Kommandos — kein manuelles Locking nötig.</li>
+    <li>Statt eines geteilten <code>Process</code>-Pools wird für jeden Aufruf
+        eine eigene <code>Process</code>-Instanz erstellt; das vereinfacht
+        Fehlerbehandlung und Cancellation.</li>
+    <li>App Sandbox ist deaktiviert (<code>ENABLE_APP_SANDBOX = NO</code>), damit
+        <code>Process</code> auf beliebige Verzeichnisse zugreifen kann.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="gitservice">GitService <code style="font-size:0.8em">Services/GitService.swift</code></h2>
+
+<p>
+    <code>actor GitService</code> bietet typisierte Git-Operationen für ein einzelnes
+    Repository. Er kapselt <code>GitRunner</code> und liefert fertige Modelle zurück.
+</p>
+
+<table>
+    <tr><th>Methode</th><th>git-Kommando</th><th>Liefert</th></tr>
+    <tr>
+        <td><code>loadCommits(limit:)</code></td>
+        <td><code>git log --all --date-order --pretty=format:…</code></td>
+        <td><code>[Commit]</code></td>
+    </tr>
+    <tr>
+        <td><code>loadBranches()</code></td>
+        <td><code>git for-each-ref refs/heads refs/remotes</code></td>
+        <td><code>[Branch]</code></td>
+    </tr>
+    <tr>
+        <td><code>loadTags()</code></td>
+        <td><code>git for-each-ref refs/tags</code> mit<br>
+            <code>%(*objectname:short)</code>-Deref</td>
+        <td><code>[GitTag]</code></td>
+    </tr>
+    <tr>
+        <td><code>loadDiff(sha:)</code></td>
+        <td><code>git show --format= --patch &lt;sha&gt;</code></td>
+        <td><code>CommitDiff</code></td>
+    </tr>
+</table>
+
+<h4>Annotierte Tags korrekt auflösen</h4>
+<p>
+    Bei annotierten Tags liefert <code>%(objectname:short)</code> den SHA des
+    <em>Tag-Objekts</em>, nicht des zugehörigen Commits. Das Format-Feld
+    <code>%(*objectname:short)</code> liefert bei Dereferenzierung den
+    Commit-SHA. <code>parseTags</code> bevorzugt den Deref-SHA (falls nicht leer),
+    sodass <code>GitTag.targetSha</code> immer auf einen Commit zeigt.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="parser">Parser</h2>
+
+<h3>GitLogParser <code style="font-size:0.8em">Services/GitLogParser.swift</code></h3>
+<p>
+    Verarbeitet die rohe Ausgabe von <code>git log --pretty=format:…</code> in eine
+    Liste von <code>Commit</code>-Objekten.
+</p>
+<ul>
+    <li><strong>Feld-Trenner:</strong> <code>U+001F</code> (ASCII Unit Separator <code>\u{1f}</code>)
+        — innerhalb eines Records.</li>
+    <li><strong>Record-Trenner:</strong> <code>U+001E</code> (ASCII Record Separator <code>\u{1e}</code>)
+        — zwischen Commits. Dieser Trenner funktioniert auch bei mehrzeiligen
+        Commit-Nachrichten zuverlässig, da Zeilenumbrüche in der Nachricht
+        keinen neuen Record starten.</li>
+    <li><strong>Felder pro Record:</strong> SHA (lang), SHA (kurz), Parent-SHAs
+        (leerzeichen-getrennt), Autor, E-Mail, Unix-Timestamp, Ref-Namen, Betreff.</li>
+</ul>
+
+<h3>DiffParser <code style="font-size:0.8em">Services/DiffParser.swift</code></h3>
+<p>
+    Verarbeitet die Ausgabe von <code>git show --format= --patch &lt;sha&gt;</code> in
+    eine <code>CommitDiff</code>-Struktur:
+</p>
+<pre>
+CommitDiff
+  └─ [FileDiff]
+       ├─ header: String          // "diff --git a/… b/…"
+       ├─ fromFile / toFile
+       └─ [Hunk]
+            ├─ header: String     // "@@ -L,N +L,N @@"
+            └─ [DiffLine]         // .context / .addition / .deletion
+</pre>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="graph">Commit-Graph-Algorithmus</h2>
+
+<h3>CommitGraphBuilder <code style="font-size:0.8em">Services/CommitGraphBuilder.swift</code></h3>
+<p>
+    Berechnet für jede Commit-Zeile die Lane-Zuweisung sowie alle Kanten, die
+    gezeichnet werden müssen. Das Ergebnis ist ein Array von <code>GraphRow</code>.
+</p>
+
+<h4>Datenstrukturen</h4>
+<pre>
+struct GraphRow {
+    let commit:    Commit
+    let lane:      Int           // welche Spur dieser Commit belegt
+    let laneCount: Int           // Gesamtzahl aktiver Spuren in dieser Zeile
+    let incoming:  [GraphEdge]   // Kanten obere Zeilenhälfte  (0 → midY)
+    let outgoing:  [GraphEdge]   // Kanten untere Zeilenhälfte (midY → height)
+    let color:     Color
+}
+
+struct GraphEdge {
+    let fromLane: Int
+    let toLane:   Int
+    let color:    Color
+}
+</pre>
+
+<h4>Algorithmus (Schritt für Schritt)</h4>
+<p>
+    Der Builder iteriert chronologisch umgekehrt (neuster Commit zuerst) durch die
+    Commit-Liste und pflegt ein Array <code>activeLanes: [String]</code>:
+    <code>activeLanes[i]</code> enthält den SHA, den Lane <code>i</code> als nächsten
+    Commit <em>erwartet</em>. Ein leerer String markiert eine freie Lane.
+</p>
+<ol>
+    <li><strong>Lane-Zuweisung:</strong>
+        <ul>
+            <li>Ist der SHA dieses Commits bereits in <code>activeLanes</code>?
+                → Lane ist bekannt (Kante von oben).</li>
+            <li>Gibt es eine freie Lane (leer)?
+                → Wiederverwendung (neuer Branch-Abzweig).</li>
+            <li>Sonst: neue Lane am Ende anhängen.</li>
+        </ul>
+    </li>
+    <li><strong>Incoming-Kanten</strong> (obere Hälfte, aus dem <em>unveränderten</em>
+        <code>activeLanes</code>-Snapshot vor der Mutation berechnet):
+        <ul>
+            <li>Belegte Lane <code>i</code> erwartet diesen Commit →
+                Kante <code>i → lane</code> (Konvergenz, auch bei Merges mit mehreren
+                einlaufenden Lanes).</li>
+            <li>Belegte Lane <code>i</code> erwartet einen anderen Commit →
+                Durchlauf-Kante <code>i → i</code>.</li>
+        </ul>
+    </li>
+    <li><strong>Outgoing-Kanten</strong> (untere Hälfte, nach der Mutation):
+        <ul>
+            <li>Alle nicht-eigenen belegten Lanes: Durchlauf <code>i → i</code>.</li>
+            <li>Erster Parent: die eigene Lane übernimmt seinen SHA
+                → Kante <code>lane → lane</code> (oder Konvergenz zu bestehendem
+                Parent).</li>
+            <li>Weitere Parents (Merge-Commits): neue oder vorhandene Lanes
+                → Kante <code>lane → targetLane</code>.</li>
+        </ul>
+    </li>
+</ol>
+
+<h3>CommitGraphView <code style="font-size:0.8em">Views/CommitGraphView.swift</code></h3>
+<p>
+    Jede Zeile rendert ihr eigenes <code>Canvas</code>. Die Höhe ist
+    <code>rowHeight = 48 pt</code>; der Knoten liegt bei <code>midY = height / 2</code>.
+</p>
+<ul>
+    <li><strong>Obere Hälfte (0 → midY):</strong> alle <code>incoming</code>-Kanten
+        werden als gerade Linien (gleiche Lane) oder Bezier-Kurven gezeichnet.</li>
+    <li><strong>Untere Hälfte (midY → height):</strong> analog für alle
+        <code>outgoing</code>-Kanten.</li>
+    <li><strong>Knoten:</strong> ausgefüllter Kreis (<code>nodeRadius = 4 pt</code>)
+        bei <code>(laneX, midY)</code> über den Kanten.</li>
+</ul>
+
+<h4>Warum LazyVStack statt List?</h4>
+<p>
+    macOS <code>List</code> (NSTableView-basiert) fügt intern Row-Insets und Abstände
+    zwischen Zeilen ein. Diese Pixel-Lücken unterbrechen die Canvas-Linien benachbarter
+    Zeilen visuell, selbst wenn die Zeichenlogik korrekt ist. Die Commit-Liste nutzt
+    deshalb <code>ScrollView + LazyVStack(spacing: 0)</code> — damit liegen die
+    Canvas-Instanzen pixelgenau aneinander, und alle Lane-Linien verlaufen lückenlos.
+    Die Selektion wird manuell über <code>.background</code> +
+    <code>.onTapGesture</code> abgebildet.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="persistenz">Persistenz &amp; BookmarkStore</h2>
+
+<h3>Datenmodell</h3>
+<p>
+    Die Repository-Übersicht wird als <strong>indirect recursive Enum</strong>
+    (<code>BookmarkNode</code>) modelliert:
+</p>
+<pre>
+indirect enum BookmarkNode: Codable, Identifiable {
+    case folder(id: UUID, name: String, children: [BookmarkNode])
+    case repository(RepositoryBookmark)
+}
+</pre>
+<p>
+    Das <code>indirect</code>-Schlüsselwort erlaubt beliebig tiefe Verschachtelung
+    bei voller <code>Codable</code>-Unterstützung durch den Swift-Compiler.
+</p>
+
+<h3>BookmarkStore <code style="font-size:0.8em">Persistence/BookmarkStore.swift</code></h3>
+<p>
+    Liest und schreibt den <code>BookmarkNode</code>-Baum als JSON-Datei
+    (<code>bookmarks.json</code>) im Application-Support-Verzeichnis der App.
+    Operationen: Laden beim App-Start, Speichern nach jeder Mutation
+    (Hinzufügen, Umbenennen, Verschieben, Entfernen).
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="dragdrop">Drag &amp; Drop</h2>
+
+<p>
+    Der Bookmark-Browser basiert auf einem <code>ScrollView</code> mit rekursiv
+    gerenderten <code>BookmarkNodeView</code>-Instanzen — <em>nicht</em> auf
+    <code>List { OutlineGroup }</code>, das intern ein <code>NSOutlineView</code>
+    verwendet.
+</p>
+
+<h4>Warum kein NSOutlineView?</h4>
+<p>
+    <code>NSOutlineView</code> fängt Drag-Events ab, bevor sie das SwiftUI-
+    Transferable-System erreichen. Jeder Versuch, <code>NSItemProvider</code> oder
+    eigene UTTypes in einem <code>List { OutlineGroup }</code> zu verwenden,
+    scheiterte daran, dass das NSOutlineView den Drag intern handhabte ohne die
+    SwiftUI-Layer zu benachrichtigen.
+</p>
+
+<h4>Lösung: Transferable-basiertes Drag &amp; Drop</h4>
+<ul>
+    <li><code>.draggable(node.id.uuidString)</code> auf jedem Knoten-View.</li>
+    <li><code>.dropDestination(for: String.self)</code> auf jedem möglichen
+        Ziel-View — nimmt die UUID des gezogenen Knotens an und ruft die
+        entsprechende Move-Funktion im ViewModel auf.</li>
+    <li>Da <code>String</code> <code>Transferable</code> out-of-the-box erfüllt,
+        entfällt jede <code>UTType</code>-Registrierung in <code>Info.plist</code>.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="keychain">Sicherheitskonzept Credentials <em>(geplant, noch nicht implementiert)</em></h2>
+
+<div class="note">
+    <strong>Hinweis:</strong>
+    Das folgende Konzept ist entworfen, aber noch nicht implementiert. Es beschreibt
+    den geplanten Ansatz für Schritt 4b (Klonen mit Credentials).
+</div>
+
+<h4>Grundsätze</h4>
+<ul>
+    <li><strong>Kein Klartext in <code>bookmarks.json</code></strong> — Passwörter
+        und Tokens werden niemals in der Bookmark-Datei gespeichert.</li>
+    <li><strong>Ausschließlich macOS Keychain</strong> — alle HTTPS-Credentials
+        (Benutzername + Passwort/Token) landen im System-Keychain über die
+        Security-Framework-API.</li>
+    <li><strong>Per Repository, nicht per Host</strong> — Credentials sind strikt
+        an die <code>bookmark.id</code> (<code>UUID</code>) gebunden. Es gibt keine
+        geteilten, host-basierten Credentials. Wer mehrere Repositories beim selben
+        Host mit verschiedenen Accounts nutzt, erhält für jedes Repo einen eigenen
+        Keychain-Eintrag.</li>
+</ul>
+
+<h4>Geplante Komponenten</h4>
+<table>
+    <tr><th>Komponente</th><th>Aufgabe</th></tr>
+    <tr>
+        <td><code>KeychainStore</code></td>
+        <td>Wrapper um <code>SecItemAdd</code>/<code>SecItemCopyMatching</code>/<code>SecItemDelete</code>;
+            liest und schreibt Credentials mit dem Key <code>bookmark.id.uuidString</code>.</td>
+    </tr>
+    <tr>
+        <td><code>CloneRepositoryView</code></td>
+        <td>SwiftUI-Sheet: Remote-URL, Benutzername, Passwort/Token — kein Passwort wird
+            im State über die View hinaus gehalten.</td>
+    </tr>
+    <tr>
+        <td><code>GitService.clone(…)</code></td>
+        <td>Ruft <code>git clone</code> via <code>GitRunner</code>; Credentials werden
+            über eine temporäre <code>GIT_ASKPASS</code>-Umgebungsvariable oder
+            URL-Einbettung übergeben und danach nicht persistiert.</td>
+    </tr>
+</table>
+
+<hr>
+
+<footer>
+    <a href="bedienung.html">← Teil A — Bedienung</a> ·
+    <a href="index.html">Zurück zur Übersicht</a>
+</footer>
+
+</body>
+</html>

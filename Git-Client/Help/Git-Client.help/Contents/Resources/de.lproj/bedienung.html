@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="AppleTitle" content="Git-Client-Hilfe">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bedienung — Git-Client-Hilfe</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="breadcrumb">
+    <a href="index.html">Git-Client-Hilfe</a> › Teil A — Bedienung
+</nav>
+
+<h1>
+    Teil A — Bedienung
+    <span class="subtitle">Für Endnutzerinnen und Endnutzer</span>
+</h1>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="uebersicht">Überblick</h2>
+
+<p>
+    Git-Client ist eine macOS-App zum Betrachten und Verwalten von Git-Repositories —
+    ähnlich wie Sourcetree. Beim Start öffnet sich die <strong>Repository-Übersicht</strong>
+    (Bookmark-Browser). Öffnest du ein Repository, wechselt die App in die
+    <strong>Commit-Ansicht</strong> mit Graph, Seitenleiste und Diff-Bereich.
+</p>
+
+<table>
+    <tr><th>Bereich</th><th>Inhalt</th></tr>
+    <tr><td>Seitenleiste (links)</td><td>Branches, Remote-Branches, Tags</td></tr>
+    <tr><td>Commit-Liste (rechts oben)</td><td>Graph + Commit-Zeilen</td></tr>
+    <tr><td>Diff (rechts unten)</td><td>Geänderter Code des ausgewählten Commits</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="repositories">Repositories verwalten</h2>
+
+<h3 id="browser">Bookmark-Browser</h3>
+<p>
+    Der Bookmark-Browser zeigt eine Baumstruktur aus <strong>Ordnern</strong> und
+    <strong>Repository-Verknüpfungen</strong> (Bookmarks). Er öffnet sich automatisch
+    beim Start, solange kein Repository geöffnet ist.
+</p>
+
+<h4>Repository hinzufügen</h4>
+<p>
+    Klicke auf <strong>„Repository hinzufügen"</strong> in der Toolbar und wähle
+    einen Ordner, der ein Git-Repository enthält (d.h. einen Ordner mit einem
+    versteckten <code>.git</code>-Unterordner).
+</p>
+
+<h4>Ordner anlegen</h4>
+<p>
+    Mit <strong>„Neuer Ordner"</strong> kannst du Repositories thematisch gruppieren
+    (z.B. „Arbeit", „Privat", „Open Source").
+</p>
+
+<h4>Repository öffnen</h4>
+<p>
+    <strong>Doppelklick</strong> auf einen Repository-Eintrag öffnet das Repository
+    in der Commit-Ansicht. Klicke auf <strong>„Zurück"</strong> in der Toolbar
+    (Pfeil-Symbol), um zur Übersicht zurückzukehren.
+</p>
+
+<h4>Umsortieren per Drag &amp; Drop</h4>
+<p>
+    Repositories und Ordner können per <strong>Drag &amp; Drop</strong> in der
+    Baumstruktur verschoben werden — sowohl auf derselben Ebene als auch in einen
+    anderen Ordner hinein.
+</p>
+
+<h4>Kontextmenü (Rechtsklick)</h4>
+<ul>
+    <li><strong>Umbenennen</strong> — Namen eines Ordners oder Bookmarks ändern.</li>
+    <li><strong>In Ordner verschieben</strong> — Eintrag in einen anderen Ordner bewegen.</li>
+    <li><strong>Pfad aktualisieren</strong> — erscheint, wenn das Repository an seinem
+        gespeicherten Pfad nicht mehr vorhanden ist (Warnsymbol ⚠️). Wähle den neuen
+        Speicherort.</li>
+    <li><strong>Entfernen</strong> — löscht den Eintrag aus der Übersicht (das
+        Repository auf der Festplatte bleibt unberührt).</li>
+</ul>
+
+<div class="note">
+    <strong>Hinweis:</strong>
+    Ein Warnsymbol ⚠️ neben einem Eintrag bedeutet, dass der hinterlegte Pfad nicht
+    mehr existiert. Nutze „Pfad aktualisieren", um das Repository am neuen Ort zu
+    verknüpfen.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="graph">Commit-History &amp; Graph lesen</h2>
+
+<p>
+    Nach dem Öffnen eines Repositories siehst du die vollständige Commit-Historie
+    (<code>git log --all</code>) in umgekehrter chronologischer Reihenfolge — der
+    neueste Commit steht oben.
+</p>
+
+<h3>Spalten der Commit-Liste</h3>
+<table>
+    <tr><th>Spalte</th><th>Bedeutung</th></tr>
+    <tr><td>Graph</td><td>Farbige Linien und Knoten zeigen den Branching/Merge-Verlauf</td></tr>
+    <tr><td>Betreff</td><td>Erste Zeile der Commit-Nachricht</td></tr>
+    <tr><td>Kurz-SHA</td><td>Abgekürzter Commit-Hash (8 Zeichen)</td></tr>
+    <tr><td>Autor</td><td>Name des Commit-Autors</td></tr>
+    <tr><td>Datum</td><td>Datum und Uhrzeit des Commits</td></tr>
+</table>
+
+<h3>Den Graph lesen</h3>
+<ul>
+    <li>Jede <strong>farbige Linie</strong> (Lane) entspricht einem Branch-Verlauf.</li>
+    <li>Ein <strong>ausgefüllter Kreis</strong> auf einer Lane markiert den Commit selbst.</li>
+    <li>Linien, die sich <strong>aufteilen</strong>, zeigen einen neuen Branch-Abzweig.</li>
+    <li>Linien, die sich <strong>zusammenführen</strong>, stellen einen Merge dar.</li>
+</ul>
+
+<h3>Ref-Badges</h3>
+<p>
+    Direkt über der Commit-Nachricht erscheinen farbige Badges für bekannte Referenzen:
+</p>
+<table>
+    <tr><th>Farbe</th><th>Bedeutung</th></tr>
+    <tr><td>Orange</td><td><code>HEAD</code> — aktueller Checkout-Stand</td></tr>
+    <tr><td>Blau</td><td>Lokaler Branch</td></tr>
+    <tr><td>Grün</td><td>Remote-Branch (z.B. <code>origin/main</code>)</td></tr>
+    <tr><td>Lila</td><td>Tag</td></tr>
+</table>
+
+<h3>Commit auswählen</h3>
+<p>
+    Klicke auf eine Zeile, um den Commit auszuwählen. Im unteren Bereich erscheint
+    automatisch der Diff dieses Commits.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="navigation">Branches und Tags</h2>
+
+<p>
+    Die Seitenleiste zeigt alle <strong>lokalen Branches</strong>,
+    <strong>Remote-Branches</strong> (gruppiert nach Remote-Namen) und
+    <strong>Tags</strong>.
+</p>
+
+<ul>
+    <li>Der aktuelle Branch ist mit einem <strong>blau ausgefüllten Pfeil-Symbol</strong>
+        markiert und fett geschrieben.</li>
+    <li>Ein <strong>Klick</strong> auf einen Branch oder Tag springt direkt zum
+        zugehörigen Commit in der Liste — die Liste scrollt automatisch dorthin,
+        und der Diff des Commits wird unten geladen.</li>
+</ul>
+
+<div class="tip">
+    <strong>Tipp:</strong>
+    Nutze den Klick auf Branches und Tags, um schnell zwischen verschiedenen
+    Entwicklungsständen zu navigieren, ohne scrollen zu müssen.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="diff">Diff ansehen</h2>
+
+<p>
+    Sobald ein Commit ausgewählt ist, erscheint im unteren Bereich der Diff — alle
+    Dateiänderungen dieses Commits im einheitlichen Patch-Format:
+</p>
+<ul>
+    <li><strong>Grün</strong> hinterlegte Zeilen wurden hinzugefügt (<code>+</code>).</li>
+    <li><strong>Rot</strong> hinterlegte Zeilen wurden entfernt (<code>-</code>).</li>
+    <li>Jede geänderte Datei wird als eigener Abschnitt mit Dateiname und
+        Hunk-Header dargestellt.</li>
+</ul>
+<p>
+    Der Diff-Bereich erstreckt sich über die volle Breite rechts der Seitenleiste.
+    Der <strong>Trennbalken</strong> zwischen Commit-Liste und Diff lässt sich mit
+    der Maus verschieben, um den Platz nach Bedarf aufzuteilen.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="reload">Neu laden</h2>
+
+<p>
+    Mit dem <strong>Neu-laden-Button</strong> (↺) in der Toolbar werden Commits,
+    Branches und Tags vom Repository erneut gelesen. Das ist nützlich, wenn du
+    außerhalb der App (z.B. im Terminal) neue Commits erstellt, Branches angelegt
+    oder Merges durchgeführt hast.
+</p>
+
+<footer>
+    <a href="index.html">← Zurück zur Übersicht</a> ·
+    <a href="technik.html">Teil B — Technische Implementierung →</a>
+</footer>
+
+</body>
+</html>

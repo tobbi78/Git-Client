@@ -50,7 +50,7 @@ actor GitService {
         return parseBranches(from: output)
     }
 
-    private func parseBranches(from output: String) -> [Branch] {
+    func parseBranches(from output: String) -> [Branch] {
         output.components(separatedBy: "\n")
             .filter { !$0.isEmpty }
             .compactMap { line -> Branch? in
@@ -96,7 +96,7 @@ actor GitService {
         return parseTags(from: output)
     }
 
-    private func parseTags(from output: String) -> [GitTag] {
+    func parseTags(from output: String) -> [GitTag] {
         output.components(separatedBy: "\n")
             .filter { !$0.isEmpty }
             .compactMap { line -> GitTag? in

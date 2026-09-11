@@ -18,6 +18,10 @@ final class BookmarkStore {
         fileURL = dir.appendingPathComponent("bookmarks.json")
     }
 
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
     func load() -> [BookmarkNode] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
         let decoder = JSONDecoder()

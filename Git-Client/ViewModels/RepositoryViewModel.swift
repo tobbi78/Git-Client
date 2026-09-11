@@ -43,6 +43,14 @@ final class RepositoryViewModel {
     var currentDiff: CommitDiff? = nil
     var isDiffLoading = false
 
+    // Expliziter Scroll-Trigger: erhöht sich bei jedem Branch-/Tag-Klick,
+    // auch wenn der Commit bereits ausgewählt war (gleiche ID).
+    private(set) var scrollRequestToken = 0
+    var scrollTargetID: String? = nil
+
+    // Dezente Rückmeldung, wenn der Tip-Commit nicht in der geladenen Liste ist.
+    var branchJumpMessage: String? = nil
+
     init(repository: RepositoryBookmark) {
         self.repository = repository
         self.service = GitService(repositoryPath: repository.path)
@@ -128,9 +136,21 @@ final class RepositoryViewModel {
     }
 
     /// Wählt den Commit mit dem gegebenen SHA (voll oder kurz) aus und scrollt dorthin.
+    /// Scrollt auch dann, wenn der Commit bereits ausgewählt war (wiederholter Klick,
+    /// oder Remote-Branch zeigt auf denselben Commit wie der lokale Branch).
     func selectCommit(bySha sha: String) {
-        guard let commit = commits.first(where: { $0.sha.hasPrefix(sha) }) else { return }
+        guard let commit = commits.first(where: { $0.sha.hasPrefix(sha) }) else {
+            // Tip-Commit ist nicht in den geladenen Commits (z.B. jenseits des Limit).
+            branchJumpMessage = "Commit dieses Branches ist nicht in den geladenen Commits."
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                branchJumpMessage = nil
+            }
+            return
+        }
         selectedCommitID = commit.sha
+        scrollTargetID = commit.sha
+        scrollRequestToken &+= 1
     }
 
     private func loadDiff(for sha: String) async {

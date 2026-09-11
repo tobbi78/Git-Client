@@ -309,6 +309,15 @@ struct MainWindowView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    // Hinweis, wenn ein Branch-Tip nicht in der geladenen Liste ist
+                    if let msg = vm.branchJumpMessage {
+                        Text(msg)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(8)
+                            .frame(maxWidth: .infinity)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                    }
                     ForEach(vm.graphRows, id: \.commit.id) { row in
                         let isSelected = vm.selectedCommitID == row.commit.id
                         HStack(spacing: 0) {
@@ -329,8 +338,11 @@ struct MainWindowView: View {
                     }
                 }
             }
-            .onChange(of: vm.selectedCommitID) { _, newID in
-                if let id = newID {
+            // Scroll wird am Token ausgelöst, nicht an der ID — dadurch funktioniert
+            // der Sprung auch wenn der Commit bereits ausgewählt war (z.B. origin/main
+            // zeigt auf denselben Commit wie main, kein ID-Wechsel nötig).
+            .onChange(of: vm.scrollRequestToken) { _, _ in
+                if let id = vm.scrollTargetID {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         proxy.scrollTo(id, anchor: .center)
                     }

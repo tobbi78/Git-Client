@@ -16,6 +16,27 @@ actor GitService {
         self.repositoryPath = repositoryPath
     }
 
+    // MARK: - Clone
+
+    /// Klont `remoteURL` nach `localPath`. Credentials werden als URL-Parameter übergeben
+    /// und verlassen die App nie als Klartext auf der Festplatte.
+    func clone(remoteURL: String, to localPath: URL, username: String?, password: String?) async throws {
+        var urlString = remoteURL
+        if let user = username, !user.isEmpty,
+           let pass = password, !pass.isEmpty,
+           var components = URLComponents(string: remoteURL) {
+            components.user = user
+            components.password = pass
+            urlString = components.string ?? remoteURL
+        }
+        // Elternverzeichnis muss existieren; git clone erstellt localPath selbst.
+        let parent = localPath.deletingLastPathComponent()
+        try await runner.runOrThrow(
+            ["clone", "--", urlString, localPath.path],
+            workingDirectory: parent
+        )
+    }
+
     // MARK: - Validation
 
     func validateRepository() async throws {

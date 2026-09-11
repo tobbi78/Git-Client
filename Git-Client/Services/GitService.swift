@@ -129,6 +129,75 @@ actor GitService {
             }
     }
 
+    // MARK: - Remote / Sync
+
+    /// Namen des ersten konfigurierten Remotes (Default-Konvention „origin").
+    /// Gibt `nil` zurück, wenn kein Remote konfiguriert ist.
+    func remoteName() async throws -> String? {
+        let output = try await runner.runOrThrow(["remote"], workingDirectory: repositoryPath)
+        let names = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+        if names.contains("origin") { return "origin" }
+        return names.first
+    }
+
+    func hasRemote() async -> Bool {
+        (try? await remoteName()) ?? nil != nil
+    }
+
+    /// Holt den aktuellen Stand vom Server. Aktualisiert die Remote-Tracking-Refs,
+    /// damit der ahead/behind-Vergleich korrekt ist.
+    ///
+    /// Credentials werden – analog zu `clone` – transient in die Fetch-URL injiziert und
+    /// verlassen die App nie als Klartext auf der Festplatte.
+    func fetch(remoteURL: String?, username: String?, password: String?) async throws {
+        guard let remote = try await remoteName() else { return }
+
+        if let remoteURL, !remoteURL.isEmpty,
+           let user = username, !user.isEmpty,
+           let pass = password, !pass.isEmpty,
+           var components = URLComponents(string: remoteURL) {
+            components.user = user
+            components.password = pass
+            let authURL = components.string ?? remoteURL
+            try await runner.runOrThrow(
+                ["fetch", "--prune", authURL, "+refs/heads/*:refs/remotes/\(remote)/*"],
+                workingDirectory: repositoryPath
+            )
+        } else {
+            try await runner.runOrThrow(
+                ["fetch", "--prune", remote],
+                workingDirectory: repositoryPath
+            )
+        }
+    }
+
+    /// Anzahl der Commits, um die der lokale HEAD dem Upstream voraus (`ahead`) bzw.
+    /// hinterher (`behind`) ist. Gibt `nil` zurück, wenn kein Upstream konfiguriert ist.
+    func aheadBehind() async throws -> (ahead: Int, behind: Int)? {
+        let result = try await runner.run(
+            ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+            workingDirectory: repositoryPath
+        )
+        guard result.exitCode == 0 else { return nil }
+        let fields = result.stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: CharacterSet(charactersIn: " \t"))
+            .filter { !$0.isEmpty }
+        guard fields.count == 2,
+              let behind = Int(fields[0]),
+              let ahead = Int(fields[1]) else { return nil }
+        return (ahead: ahead, behind: behind)
+    }
+
+    /// Übernimmt die Upstream-Commits per Fast-Forward in den aktuellen Branch.
+    /// Wirft bei Divergenz (`GitError.nonZeroExit`), da kein Merge-Commit erzeugt wird.
+    func fastForward() async throws {
+        try await runner.runOrThrow(
+            ["merge", "--ff-only", "@{upstream}"],
+            workingDirectory: repositoryPath
+        )
+    }
+
     // MARK: - Diff
 
     func loadDiff(sha: String) async throws -> CommitDiff {

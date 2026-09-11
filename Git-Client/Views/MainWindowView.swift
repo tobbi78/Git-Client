@@ -38,7 +38,7 @@ struct MainWindowView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             VSplitView {
-                commitHistory
+                commitPane
                     .frame(minHeight: 200)
                 commitDetail
                     .frame(minHeight: 180)
@@ -178,6 +178,100 @@ struct MainWindowView: View {
                     .font(.callout.weight(.semibold))
             }
         }
+    }
+
+    // MARK: - Commit-Bereich (Sync-Leiste + Liste)
+
+    @ViewBuilder
+    private var commitPane: some View {
+        VStack(spacing: 0) {
+            if let vm {
+                syncBar(vm: vm)
+                Divider()
+            }
+            commitHistory
+        }
+    }
+
+    @ViewBuilder
+    private func syncBar(vm: RepositoryViewModel) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                Task { await vm.fetch() }
+            } label: {
+                Label("Vom Server prüfen", systemImage: "arrow.down.circle")
+            }
+            .disabled(!vm.hasRemote || vm.isFetching || vm.isPulling || vm.isLoading)
+            .help("Holt den aktuellen Stand vom Server (git fetch)")
+
+            if vm.isFetching || vm.isPulling {
+                ProgressView().controlSize(.small)
+            }
+
+            syncStatus(vm: vm)
+
+            Spacer()
+
+            Button {
+                Task { await vm.pull() }
+            } label: {
+                Label("Aktualisieren", systemImage: "arrow.triangle.pull")
+            }
+            .disabled(!vm.hasUpstream || vm.behindCount == 0 || vm.isFetching || vm.isPulling || vm.isLoading)
+            .help("Übernimmt die Server-Commits per Fast-Forward (git merge --ff-only)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private func syncStatus(vm: RepositoryViewModel) -> some View {
+        if let message = vm.remoteStatusMessage {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        } else if !vm.hasRemote {
+            Text("Kein Remote")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if !vm.hasUpstream {
+            Text("Kein Upstream")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if vm.behindCount > 0 {
+            HStack(spacing: 6) {
+                Text("\(commitCountLabel(vm.behindCount)) auf dem Server")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.15))
+                    .foregroundStyle(Color.accentColor)
+                    .clipShape(Capsule())
+                if vm.aheadCount > 0 {
+                    Text("\(vm.aheadCount) voraus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            HStack(spacing: 6) {
+                Label("Aktuell", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if vm.aheadCount > 0 {
+                    Text("· \(vm.aheadCount) voraus")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func commitCountLabel(_ count: Int) -> String {
+        count == 1 ? "1 Commit" : "\(count) Commits"
     }
 
     // MARK: - Commit-Liste

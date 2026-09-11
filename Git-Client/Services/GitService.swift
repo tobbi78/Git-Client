@@ -60,6 +60,17 @@ actor GitService {
         return GitLogParser.parse(output)
     }
 
+    /// Lädt einen einzelnen Commit anhand seines vollen SHA.
+    /// Wird verwendet, um Branch-Tips nachzuladen, die außerhalb des normalen Fensters liegen.
+    func loadSingleCommit(sha: String) async -> Commit? {
+        let format = "--pretty=format:\(GitLogParser.formatString)"
+        guard let output = try? await runner.runOrThrow(
+            ["log", "-1", format, sha],
+            workingDirectory: repositoryPath
+        ) else { return nil }
+        return GitLogParser.parse(output).first
+    }
+
     // MARK: - Branches
 
     func loadBranches() async throws -> [Branch] {

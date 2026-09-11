@@ -16,8 +16,8 @@ struct MainWindowView: View {
     @Environment(AppModel.self) private var appModel
     let repository: RepositoryBookmark
 
-    @State private var isBranchesExpanded = true
-    @State private var isTagsExpanded = true
+    @State private var isBranchesExpanded = false
+    @State private var isTagsExpanded = false
     @State private var expandedRemotes: [String: Bool] = [:]
 
     private var vm: RepositoryViewModel? { appModel.repositoryViewModel }

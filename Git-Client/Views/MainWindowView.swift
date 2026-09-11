@@ -152,19 +152,28 @@ struct MainWindowView: View {
 
     private func commitList(vm: RepositoryViewModel) -> some View {
         ScrollViewReader { proxy in
-            List(vm.graphRows, id: \.commit.id, selection: Binding(
-                get: { vm.selectedCommitID },
-                set: { vm.selectedCommitID = $0 }
-            )) { row in
-                HStack(spacing: 0) {
-                    CommitGraphView(row: row, rowHeight: Self.rowHeight)
-                    CommitRowView(commit: row.commit)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(vm.graphRows, id: \.commit.id) { row in
+                        let isSelected = vm.selectedCommitID == row.commit.id
+                        HStack(spacing: 0) {
+                            CommitGraphView(row: row, rowHeight: Self.rowHeight)
+                            CommitRowView(commit: row.commit)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 6)
+                        }
+                        .frame(height: Self.rowHeight)
+                        .background(
+                            isSelected
+                                ? Color(nsColor: .selectedContentBackgroundColor)
+                                : Color.clear
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { vm.selectedCommitID = row.commit.id }
+                        .id(row.commit.id)
+                    }
                 }
-                .frame(height: Self.rowHeight)
-                .tag(row.commit.id)
             }
-            .listStyle(.plain)
             .onChange(of: vm.selectedCommitID) { _, newID in
                 if let id = newID {
                     withAnimation(.easeInOut(duration: 0.25)) {

@@ -51,13 +51,31 @@ actor GitRunner {
                 return
             }
 
+            // Liest stdout/stderr parallel in Background-Threads, damit der Pipe-Buffer
+            // (macOS: ~64 KB) nicht vollläuft. Ohne paralleles Lesen blockiert git bei
+            // großen Ausgaben (z.B. git log auf einem großen Repo), wartet auf das
+            // Leeren des Buffers — und waitUntilExit() kehrt nie zurück (Deadlock).
+            let group = DispatchGroup()
+            let stdoutCollector = DataCollector()
+            let stderrCollector = DataCollector()
+
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                stdoutCollector.data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                stderrCollector.data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+
             process.waitUntilExit()
+            group.wait()
 
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-            let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-            let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+            let stdout = String(data: stdoutCollector.data, encoding: .utf8) ?? ""
+            let stderr = String(data: stderrCollector.data, encoding: .utf8) ?? ""
 
             continuation.resume(returning: GitResult(
                 stdout: stdout,
@@ -76,3 +94,14 @@ actor GitRunner {
         return result.stdout
     }
 }
+
+// MARK: - Private Hilfswerkzeug
+
+/// Sammelt Data für den DispatchGroup-basierten Pipe-Read.
+/// @unchecked Sendable: Zugriff ist durch group.wait() sequenziert.
+/// nonisolated, da kein MainActor-Kontext benötigt wird.
+private final class DataCollector: @unchecked Sendable {
+    nonisolated init() {}
+    nonisolated(unsafe) var data = Data()
+}
+

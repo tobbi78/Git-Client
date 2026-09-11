@@ -2,9 +2,12 @@
 //  MainWindowView.swift
 //  Git-Client
 //
-//  Dreispaltiges NavigationSplitView für ein geöffnetes Repository.
-//  Sidebar: Branches/Tags. Mitte: Commit-Liste (→ Graph in Schritt 7).
-//  Detail: Commit + Diff (Schritt 8).
+//  Sourcetree-Layout:
+//  ┌──────────────┬────────────────────────────────┐
+//  │              │  Commit-Liste (oben)            │
+//  │   Sidebar    ├────────────────────────────────│
+//  │  (voll hoch) │  Diff / Detail (unten, breit)  │
+//  └──────────────┴────────────────────────────────┘
 //
 
 import SwiftUI
@@ -28,12 +31,14 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-        } content: {
-            commitHistory
-                .navigationSplitViewColumnWidth(min: 320, ideal: 560)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
-            commitDetail
+            VSplitView {
+                commitHistory
+                    .frame(minHeight: 200)
+                commitDetail
+                    .frame(minHeight: 180)
+            }
         }
         .navigationTitle(repository.name)
         .navigationSubtitle(subtitleText)
@@ -76,6 +81,8 @@ struct MainWindowView: View {
             } else {
                 ForEach(local) { branch in
                     BranchRowView(branch: branch, isLocal: true)
+                        .contentShape(Rectangle())
+                        .onTapGesture { vm?.selectCommit(bySha: branch.tipSha) }
                 }
             }
         }
@@ -90,6 +97,8 @@ struct MainWindowView: View {
             Section("Remotes / \(remoteName)") {
                 ForEach(branches) { branch in
                     BranchRowView(branch: branch, isLocal: false)
+                        .contentShape(Rectangle())
+                        .onTapGesture { vm?.selectCommit(bySha: branch.tipSha) }
                 }
             }
         }
@@ -103,12 +112,14 @@ struct MainWindowView: View {
                 ForEach(allTags) { tag in
                     Label(tag.name, systemImage: "tag")
                         .font(.callout)
+                        .contentShape(Rectangle())
+                        .onTapGesture { vm?.selectCommit(bySha: tag.targetSha) }
                 }
             }
         }
     }
 
-    // MARK: - Commit-Historie
+    // MARK: - Commit-Liste
 
     @ViewBuilder
     private var commitHistory: some View {
@@ -140,22 +151,31 @@ struct MainWindowView: View {
     private static let rowHeight: CGFloat = 48
 
     private func commitList(vm: RepositoryViewModel) -> some View {
-        List(vm.graphRows, id: \.commit.id, selection: Binding(
-            get: { vm.selectedCommitID },
-            set: { vm.selectedCommitID = $0 }
-        )) { row in
-            HStack(spacing: 0) {
-                CommitGraphView(row: row, rowHeight: Self.rowHeight)
-                CommitRowView(commit: row.commit)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        ScrollViewReader { proxy in
+            List(vm.graphRows, id: \.commit.id, selection: Binding(
+                get: { vm.selectedCommitID },
+                set: { vm.selectedCommitID = $0 }
+            )) { row in
+                HStack(spacing: 0) {
+                    CommitGraphView(row: row, rowHeight: Self.rowHeight)
+                    CommitRowView(commit: row.commit)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: Self.rowHeight)
+                .tag(row.commit.id)
             }
-            .frame(height: Self.rowHeight)
-            .tag(row.commit.id)
+            .listStyle(.plain)
+            .onChange(of: vm.selectedCommitID) { _, newID in
+                if let id = newID {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(id, anchor: .center)
+                    }
+                }
+            }
         }
-        .listStyle(.plain)
     }
 
-    // MARK: - Detail
+    // MARK: - Detail / Diff
 
     @ViewBuilder
     private var commitDetail: some View {

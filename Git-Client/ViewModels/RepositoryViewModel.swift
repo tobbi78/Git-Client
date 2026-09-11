@@ -56,6 +56,12 @@ final class RepositoryViewModel {
         isLoading = false
     }
 
+    /// Wählt den Commit mit dem gegebenen SHA (voll oder kurz) aus und scrollt dorthin.
+    func selectCommit(bySha sha: String) {
+        guard let commit = commits.first(where: { $0.sha.hasPrefix(sha) }) else { return }
+        selectedCommitID = commit.sha
+    }
+
     private func loadDiff(for sha: String) async {
         isDiffLoading = true
         currentDiff = nil

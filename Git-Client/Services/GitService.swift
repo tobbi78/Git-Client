@@ -86,7 +86,9 @@ actor GitService {
     // MARK: - Tags
 
     func loadTags() async throws -> [GitTag] {
-        let format = "%(refname:short)\t%(objectname:short)"
+        // %(*objectname:short) liefert den dereferenzierten Commit-SHA bei annotierten Tags;
+        // bei Lightweight-Tags ist es leer → Fallback auf %(objectname:short)
+        let format = "%(refname:short)\t%(objectname:short)\t%(*objectname:short)"
         let output = try await runner.runOrThrow(
             ["for-each-ref", "--format=\(format)", "refs/tags"],
             workingDirectory: repositoryPath
@@ -100,7 +102,9 @@ actor GitService {
             .compactMap { line -> GitTag? in
                 let fields = line.components(separatedBy: "\t")
                 guard fields.count >= 2 else { return nil }
-                return GitTag(name: fields[0], targetSha: fields[1])
+                let deref = fields.count >= 3 ? fields[2] : ""
+                let commitSha = deref.isEmpty ? fields[1] : deref
+                return GitTag(name: fields[0], targetSha: commitSha)
             }
     }
 

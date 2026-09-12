@@ -102,18 +102,62 @@ struct DiffView: View {
     private func fileList(_ files: [DiffFile]) -> some View {
         List(files, selection: $selectedFileID) { file in
             VStack(alignment: .leading, spacing: 2) {
-                Text(URL(fileURLWithPath: file.newPath).lastPathComponent)
-                    .font(.callout)
-                    .lineLimit(1)
-                Text(file.displayName)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                HStack(spacing: 5) {
+                    Image(systemName: changeTypeIcon(file.changeType))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(changeTypeColor(file.changeType))
+                        .frame(width: 13)
+                    Text(URL(fileURLWithPath: file.newPath).lastPathComponent)
+                        .font(.callout)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    if file.addedLines > 0 {
+                        Text("+\(file.addedLines)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.green)
+                    }
+                    if file.deletedLines > 0 {
+                        Text("-\(file.deletedLines)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.red)
+                    }
+                    if file.oldPath != file.newPath {
+                        Text(file.displayName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text(file.newPath)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
             .tag(file.id)
         }
         .listStyle(.sidebar)
+    }
+
+    private func changeTypeIcon(_ type: DiffFileChangeType) -> String {
+        switch type {
+        case .added:    return "plus.circle.fill"
+        case .deleted:  return "minus.circle.fill"
+        case .renamed:  return "arrow.triangle.2.circlepath"
+        case .modified: return "pencil.circle.fill"
+        }
+    }
+
+    private func changeTypeColor(_ type: DiffFileChangeType) -> Color {
+        switch type {
+        case .added:    return .green
+        case .deleted:  return .red
+        case .renamed:  return .orange
+        case .modified: return .blue
+        }
     }
 
     private func patchView(_ file: DiffFile) -> some View {

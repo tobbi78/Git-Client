@@ -111,8 +111,8 @@ struct GitResult {
 <table>
     <tr><th>Methode</th><th>git-Kommando</th><th>Liefert</th></tr>
     <tr>
-        <td><code>loadCommits(limit:)</code></td>
-        <td><code>git log --all --date-order --pretty=format:…</code></td>
+        <td><code>loadCommits(limit:skip:)</code></td>
+        <td><code>git log --all --date-order --pretty=format:… -&lt;limit&gt; [--skip=&lt;skip&gt;]</code></td>
         <td><code>[Commit]</code></td>
     </tr>
     <tr>
@@ -130,6 +130,11 @@ struct GitResult {
         <td><code>loadDiff(sha:)</code></td>
         <td><code>git show --format= --patch &lt;sha&gt;</code></td>
         <td><code>CommitDiff</code></td>
+    </tr>
+    <tr>
+        <td><code>aheadBehind()</code></td>
+        <td><code>git rev-list --left-right --count @{upstream}...HEAD</code></td>
+        <td><code>(ahead: Int, behind: Int)?</code></td>
     </tr>
 </table>
 
@@ -245,7 +250,7 @@ struct GraphEdge {
 <h3>CommitGraphView <code style="font-size:0.8em">Views/CommitGraphView.swift</code></h3>
 <p>
     Jede Zeile rendert ihr eigenes <code>Canvas</code>. Die Höhe ist
-    <code>rowHeight = 48 pt</code>; der Knoten liegt bei <code>midY = height / 2</code>.
+    <code>rowHeight = 56 pt</code>; der Knoten liegt bei <code>midY = height / 2</code>.
 </p>
 <ul>
     <li><strong>Obere Hälfte (0 → midY):</strong> alle <code>incoming</code>-Kanten
@@ -286,12 +291,142 @@ indirect enum BookmarkNode: Codable, Identifiable {
     bei voller <code>Codable</code>-Unterstützung durch den Swift-Compiler.
 </p>
 
+<h3>Speicherort</h3>
+<p>
+    Die Repository-Liste wird als JSON-Datei im macOS
+    <strong>Application-Support-Verzeichnis</strong> des Benutzers abgelegt:
+</p>
+<pre>
+~/Library/Application Support/Git-Client/bookmarks.json
+</pre>
+<p>
+    Der Pfad wird zur Laufzeit über
+    <code>FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)</code>
+    ermittelt und ist damit unabhängig vom Installationsort der App.
+    Das Verzeichnis <code>Git-Client/</code> wird beim ersten Start automatisch angelegt.
+</p>
+
+<div class="note">
+    <strong>Hinweis:</strong>
+    Die Datei speichert ausschließlich Metadaten (Name, Pfad, Remote-URL, Benutzername) —
+    <em>niemals</em> Passwörter oder Tokens. Credentials werden ausschließlich im
+    macOS Keychain abgelegt (siehe <a href="#keychain">Sicherheitskonzept</a>).
+</div>
+
 <h3>BookmarkStore <code style="font-size:0.8em">Persistence/BookmarkStore.swift</code></h3>
 <p>
-    Liest und schreibt den <code>BookmarkNode</code>-Baum als JSON-Datei
-    (<code>bookmarks.json</code>) im Application-Support-Verzeichnis der App.
-    Operationen: Laden beim App-Start, Speichern nach jeder Mutation
-    (Hinzufügen, Umbenennen, Verschieben, Entfernen).
+    Liest und schreibt den <code>BookmarkNode</code>-Baum als JSON. Operationen:
+    Laden beim App-Start, Speichern nach jeder Mutation (Hinzufügen, Umbenennen,
+    Verschieben, Entfernen).
+</p>
+
+<h4>Atomares Schreiben</h4>
+<p>
+    Um beschädigte Dateien bei einem Absturz während des Schreibvorgangs zu verhindern,
+    verwendet <code>BookmarkStore.save</code> ein zweistufiges Verfahren:
+</p>
+<ol>
+    <li>JSON wird in eine temporäre Datei (<code>bookmarks.json.tmp</code>) geschrieben.</li>
+    <li>Die temporäre Datei ersetzt atomar die eigentliche Zieldatei via
+        <code>FileManager.replaceItem(at:withItemAt:)</code>.</li>
+</ol>
+<p>
+    Dadurch ist <code>bookmarks.json</code> zu jedem Zeitpunkt entweder vollständig
+    im alten oder vollständig im neuen Zustand — nie halb geschrieben.
+</p>
+
+<h4>JSON-Format</h4>
+<p>
+    Die Datei wird mit <code>.prettyPrinted</code> und <code>.sortedKeys</code>
+    formatiert — lesbar für Menschen und stabil für Versionskontrollsysteme.
+    Ein <code>RepositoryBookmark</code>-Knoten enthält:
+</p>
+<table>
+    <tr><th>Feld</th><th>Typ</th><th>Bedeutung</th></tr>
+    <tr><td><code>id</code></td><td>UUID-String</td><td>Stabiler Primärschlüssel; bindet Keychain-Einträge</td></tr>
+    <tr><td><code>name</code></td><td>String</td><td>Anzeigename im Bookmark-Browser</td></tr>
+    <tr><td><code>path</code></td><td>Dateipfad</td><td>Absoluter Pfad zum lokalen Repository</td></tr>
+    <tr><td><code>remoteURL</code></td><td>String?</td><td>HTTPS-URL des Remotes (optional)</td></tr>
+    <tr><td><code>username</code></td><td>String?</td><td>Benutzername für HTTPS-Auth (optional, kein Passwort)</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="lazyladen">Lazy Loading der Commit-Liste</h2>
+
+<h3>Motivation</h3>
+<p>
+    Bei sehr großen Repositories (mehrere tausend Commits) wäre das vollständige Laden
+    beim Öffnen zu langsam und speicherintensiv. Die App lädt deshalb zunächst nur eine
+    konfigurierbare Anzahl von Commits (<em>Batch</em>) und lädt automatisch weitere nach,
+    sobald der Nutzer ans Ende der Liste scrollt (<em>Infinite Scrolling</em>).
+</p>
+
+<h3>Paginierung via <code>git log --skip</code></h3>
+<p>
+    <code>GitService.loadCommits(limit:skip:)</code> verwendet das <code>--skip</code>-Flag
+    von <code>git log</code>, um Seiten zu implementieren:
+</p>
+<pre>
+// Erste Seite (Erstladung):
+git log --all --date-order --pretty=format:… -2000
+
+// Zweite Seite (nach Scrollen):
+git log --all --date-order --pretty=format:… -2000 --skip=2000
+</pre>
+<p>
+    <code>--date-order</code> sorgt für stabile Sortierung über alle Seiten hinweg,
+    solange sich die Refs nicht verändern. <code>--all</code> schließt alle Branches
+    und Remote-Tracking-Refs ein.
+</p>
+
+<h3>Paging-State im ViewModel</h3>
+<p>
+    <code>RepositoryViewModel</code> verwaltet den Ladezustand mit drei Properties:
+</p>
+<table>
+    <tr><th>Property</th><th>Bedeutung</th></tr>
+    <tr><td><code>pagedCount</code></td><td>Anzahl der per <code>git log --skip</code> bereits geladenen Commits (Basis für den nächsten <code>--skip</code>-Wert). Nicht identisch mit <code>commits.count</code>, da Branch-Tips, die außerhalb des Paging-Fensters lagen, separat nachgeladen werden.</td></tr>
+    <tr><td><code>canLoadMore</code></td><td>Wird <code>false</code>, wenn eine Seite weniger als <code>pageSize</code> Commits zurückliefert — das Ende der Historie ist erreicht.</td></tr>
+    <tr><td><code>isLoadingMore</code></td><td>Guard gegen parallele Nachlade-Vorgänge.</td></tr>
+</table>
+
+<h3>Scroll-Trigger (Infinite Scrolling)</h3>
+<p>
+    Am Ende der <code>LazyVStack</code> befindet sich ein unsichtbarer Indikator-View,
+    der <code>.onAppear</code> nutzt, um <code>loadMore()</code> auszulösen. Da
+    <code>LazyVStack</code> Kinder nur rendert, wenn sie im sichtbaren Bereich liegen,
+    feuert <code>.onAppear</code> erst dann, wenn der Nutzer tatsächlich ans Ende
+    scrollt. Sobald <code>canLoadMore == false</code> ist, verschwindet der Indikator
+    und es werden keine weiteren Anfragen gesendet.
+</p>
+
+<h3>AppSettings &amp; Einstellungen</h3>
+<p>
+    Die Batch-Größe ist über das Einstellungsfenster (⌘,) konfigurierbar und wird
+    in <code>UserDefaults</code> gespeichert.
+</p>
+<table>
+    <tr><th>Komponente</th><th>Datei</th><th>Detail</th></tr>
+    <tr>
+        <td><code>AppSettings</code></td>
+        <td><code>AppSettings.swift</code></td>
+        <td>Zentraler Accessor für den UserDefaults-Key
+            <code>"commitBatchSize"</code>. Standardwert: 2000.
+            Mindestwert: 100 (wird beim Lesen erzwungen).</td>
+    </tr>
+    <tr>
+        <td><code>SettingsView</code></td>
+        <td><code>Views/SettingsView.swift</code></td>
+        <td>macOS-<code>Settings</code>-Szene. Eingaben werden
+            erst beim Klick auf <em>Speichern</em> übernommen.
+            Wird das Fenster mit ungespeicherten Änderungen über den
+            Schließen-Button geschlossen, erscheint ein Bestätigungs-Dialog.</td>
+    </tr>
+</table>
+<p>
+    Die Änderung der Batch-Größe greift beim nächsten Öffnen oder Neu-Laden
+    eines Repositories. Laufende Ladevorgänge nutzen den Wert, der beim Start
+    von <code>load()</code> aktiv war.
 </p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -324,21 +459,16 @@ indirect enum BookmarkNode: Codable, Identifiable {
 </ul>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<h2 id="keychain">Sicherheitskonzept Credentials <em>(geplant, noch nicht implementiert)</em></h2>
-
-<div class="note">
-    <strong>Hinweis:</strong>
-    Das folgende Konzept ist entworfen, aber noch nicht implementiert. Es beschreibt
-    den geplanten Ansatz für Schritt 4b (Klonen mit Credentials).
-</div>
+<h2 id="keychain">Sicherheitskonzept Credentials</h2>
 
 <h4>Grundsätze</h4>
 <ul>
     <li><strong>Kein Klartext in <code>bookmarks.json</code></strong> — Passwörter
         und Tokens werden niemals in der Bookmark-Datei gespeichert.</li>
     <li><strong>Ausschließlich macOS Keychain</strong> — alle HTTPS-Credentials
-        (Benutzername + Passwort/Token) landen im System-Keychain über die
-        Security-Framework-API.</li>
+        (Passwort/Token) landen im System-Keychain über die
+        Security-Framework-API (<code>SecItemAdd</code>, <code>SecItemCopyMatching</code>,
+        <code>SecItemDelete</code>).</li>
     <li><strong>Per Repository, nicht per Host</strong> — Credentials sind strikt
         an die <code>bookmark.id</code> (<code>UUID</code>) gebunden. Es gibt keine
         geteilten, host-basierten Credentials. Wer mehrere Repositories beim selben
@@ -346,26 +476,50 @@ indirect enum BookmarkNode: Codable, Identifiable {
         Keychain-Eintrag.</li>
 </ul>
 
-<h4>Geplante Komponenten</h4>
+<h4>Implementierung</h4>
 <table>
-    <tr><th>Komponente</th><th>Aufgabe</th></tr>
+    <tr><th>Komponente</th><th>Datei</th><th>Aufgabe</th></tr>
     <tr>
         <td><code>KeychainStore</code></td>
-        <td>Wrapper um <code>SecItemAdd</code>/<code>SecItemCopyMatching</code>/<code>SecItemDelete</code>;
-            liest und schreibt Credentials mit dem Key <code>bookmark.id.uuidString</code>.</td>
+        <td><code>Persistence/KeychainStore.swift</code></td>
+        <td>Statische Methoden <code>save(_:for:)</code>,
+            <code>load(for:)</code>, <code>delete(for:)</code>.
+            Service-Label: <code>de.tobias.florian.Git-Client.credentials</code>.
+            Schlüssel: <code>bookmark.id.uuidString</code>.</td>
     </tr>
     <tr>
         <td><code>CloneRepositoryView</code></td>
-        <td>SwiftUI-Sheet: Remote-URL, Benutzername, Passwort/Token — kein Passwort wird
-            im State über die View hinaus gehalten.</td>
+        <td><code>Views/CloneRepositoryView.swift</code></td>
+        <td>SwiftUI-Sheet: Remote-URL, Benutzername, Passwort/Token —
+            das Passwort wird nach dem Klonen sofort nach
+            <code>KeychainStore</code> geschrieben und nicht länger im
+            View-State gehalten.</td>
     </tr>
     <tr>
         <td><code>GitService.clone(…)</code></td>
-        <td>Ruft <code>git clone</code> via <code>GitRunner</code>; Credentials werden
-            über eine temporäre <code>GIT_ASKPASS</code>-Umgebungsvariable oder
-            URL-Einbettung übergeben und danach nicht persistiert.</td>
+        <td><code>Services/GitService.swift</code></td>
+        <td>Credentials werden transient per URL-Einbettung an
+            <code>git clone</code> übergeben
+            (<code>https://user:token@host/…</code>) und danach nicht
+            persistiert.</td>
+    </tr>
+    <tr>
+        <td><code>GitService.fetch(…)</code></td>
+        <td><code>Services/GitService.swift</code></td>
+        <td>Analog zu <code>clone</code>: temporäre URL-Einbettung für
+            <code>git fetch --prune</code>.</td>
     </tr>
 </table>
+
+<h4>Keychain-Eintrag manuell löschen</h4>
+<p>
+    Wird ein Repository aus dem Bookmark-Browser entfernt (<em>Entfernen</em> im
+    Kontextmenü), löscht die App den zugehörigen Keychain-Eintrag
+    <em>nicht</em> automatisch — das vermeidet unbeabsichtigte Datenverluste bei
+    versehentlichem Löschen. Der Eintrag kann über die macOS-App
+    <strong>Schlüsselbundverwaltung</strong> manuell gefunden und gelöscht werden
+    (Suchbegriff: <code>de.tobias.florian.Git-Client.credentials</code>).
+</p>
 
 <hr>
 

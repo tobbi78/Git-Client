@@ -25,11 +25,21 @@ struct MainWindowView: View {
     @State private var graphColumnWidth: CGFloat = 200
     @State private var graphColumnWidthAtDragStart: CGFloat = 200
 
+    // Suche / Filter
+    @State private var criteria = CommitSearchCriteria()
+    @State private var showAdvancedFilter = false
+
     private var vm: RepositoryViewModel? { appModel.repositoryViewModel }
 
     private var subtitleText: String {
         guard let vm else { return repository.path.path }
         if vm.isLoading { return "Wird geladen…" }
+        if vm.isSearchActive {
+            if vm.isSearching { return "Suche…" }
+            let count = vm.searchResults.count
+            let label = count == 1 ? "1 Treffer" : "\(count) Treffer"
+            return vm.visibleCanLoadMore ? "\(label) (mehr verfügbar)" : label
+        }
         let count = vm.commits.count
         let branch = vm.branches.first(where: \.isCurrent)?.name ?? ""
         if count == 0 { return repository.path.path }
@@ -212,6 +222,11 @@ struct MainWindowView: View {
             if let vm {
                 syncBar(vm: vm)
                 Divider()
+                searchBar(vm: vm)
+                if showAdvancedFilter {
+                    advancedFilterBar(vm: vm)
+                }
+                Divider()
             }
             commitHistory
         }
@@ -247,6 +262,136 @@ struct MainWindowView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    // MARK: - Suchleiste
+
+    @ViewBuilder
+    private func searchBar(vm: RepositoryViewModel) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.callout)
+
+            TextField("Commits durchsuchen…", text: $criteria.message)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .onChange(of: criteria) { _, new in vm.updateSearch(new) }
+
+            if vm.isSearching {
+                ProgressView().controlSize(.mini)
+            }
+
+            // Erweiterte Filter umschalten
+            Toggle(isOn: $showAdvancedFilter) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+            }
+            .toggleStyle(.button)
+            .buttonStyle(.borderless)
+            .foregroundStyle(showAdvancedFilter ? Color.accentColor : Color.secondary)
+            .help("Erweiterte Filter (Autor, Datum, SHA)")
+
+            // Löschen-Button bei aktiver Suche
+            if criteria.isActive {
+                Button {
+                    criteria = CommitSearchCriteria()
+                    vm.updateSearch(criteria)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Suche zurücksetzen")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private func advancedFilterBar(vm: RepositoryViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                // Autor
+                HStack(spacing: 4) {
+                    Text("Autor:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Name oder E-Mail", text: $criteria.author)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                        .frame(width: 160)
+                        .onChange(of: criteria) { _, new in vm.updateSearch(new) }
+                }
+
+                // SHA
+                HStack(spacing: 4) {
+                    Text("SHA:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Präfix", text: $criteria.sha)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                        .frame(width: 100)
+                        .onChange(of: criteria) { _, new in vm.updateSearch(new) }
+                }
+            }
+
+            HStack(spacing: 12) {
+                // Von-Datum
+                HStack(spacing: 4) {
+                    Toggle(isOn: Binding(
+                        get: { criteria.since != nil },
+                        set: { active in
+                            criteria.since = active ? Calendar.current.date(
+                                byAdding: .month, value: -1, to: Date()) : nil
+                            vm.updateSearch(criteria)
+                        }
+                    )) {
+                        Text("Von:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+                    if let since = criteria.since {
+                        DatePicker("", selection: Binding(
+                            get: { since },
+                            set: { criteria.since = $0; vm.updateSearch(criteria) }
+                        ), displayedComponents: .date)
+                        .labelsHidden()
+                        .font(.caption)
+                    }
+                }
+
+                // Bis-Datum
+                HStack(spacing: 4) {
+                    Toggle(isOn: Binding(
+                        get: { criteria.until != nil },
+                        set: { active in
+                            criteria.until = active ? Date() : nil
+                            vm.updateSearch(criteria)
+                        }
+                    )) {
+                        Text("Bis:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+                    if let until = criteria.until {
+                        DatePicker("", selection: Binding(
+                            get: { until },
+                            set: { criteria.until = $0; vm.updateSearch(criteria) }
+                        ), displayedComponents: .date)
+                        .labelsHidden()
+                        .font(.caption)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(.bar)
     }
 
@@ -314,7 +459,14 @@ struct MainWindowView: View {
                     description: Text(error)
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if vm.commits.isEmpty {
+            } else if vm.isSearchActive && vm.searchResults.isEmpty && !vm.isSearching {
+                ContentUnavailableView(
+                    "Keine Treffer",
+                    systemImage: "magnifyingglass",
+                    description: Text("Keine Commits gefunden, die den Suchkriterien entsprechen.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !vm.isSearchActive && vm.commits.isEmpty {
                 ContentUnavailableView(
                     "Keine Commits",
                     systemImage: "tray",
@@ -348,7 +500,7 @@ struct MainWindowView: View {
                             .frame(maxWidth: .infinity)
                             .background(Color(nsColor: .controlBackgroundColor))
                     }
-                    ForEach(vm.graphRows, id: \.commit.id) { row in
+                    ForEach(vm.visibleGraphRows, id: \.commit.id) { row in
                         let isSelected = vm.selectedCommitID == row.commit.id
                         HStack(spacing: 0) {
                             // GRAPH-SPALTE: feste (ziehbare) Breite, Graph wird rechts
@@ -382,7 +534,7 @@ struct MainWindowView: View {
                     // Lazy-Loading-Indikator: erscheint erst wenn das Listenende
                     // sichtbar wird (LazyVStack rendert nur sichtbare Kinder).
                     // .onAppear löst die nächste Batch aus → echtes Infinite Scrolling.
-                    if vm.canLoadMore {
+                    if vm.visibleCanLoadMore {
                         HStack {
                             Spacer()
                             if vm.isLoadingMore {

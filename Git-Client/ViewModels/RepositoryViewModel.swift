@@ -38,12 +38,34 @@ final class RepositoryViewModel {
     var isPulling = false
     var remoteStatusMessage: String? = nil
 
+    // MARK: - Suche / Filter
+
+    var searchCriteria = CommitSearchCriteria()
+    private(set) var searchResults: [Commit] = []
+    private(set) var searchGraphRows: [GraphRow] = []
+    var isSearching = false
+    private var searchPagedCount = 0
+    private var searchCanLoadMore = true
+    private var searchTask: Task<Void, Never>?
+
+    /// true wenn mindestens ein Suchkriterium aktiv ist.
+    var isSearchActive: Bool { searchCriteria.isActive }
+
+    /// Die aktuell sichtbaren Graph-Zeilen (Suchtreffer oder normale Liste).
+    var visibleGraphRows: [GraphRow] { isSearchActive ? searchGraphRows : graphRows }
+
+    /// Ob weitere Einträge nachgeladen werden können (je nach Modus).
+    var visibleCanLoadMore: Bool { isSearchActive ? searchCanLoadMore : canLoadMore }
+
     var selectedCommitID: String? = nil {
         didSet { if let id = selectedCommitID { Task { await loadDiff(for: id) } } }
     }
 
     var selectedCommit: Commit? {
         guard let id = selectedCommitID else { return nil }
+        if isSearchActive {
+            return searchResults.first { $0.id == id } ?? commits.first { $0.id == id }
+        }
         return commits.first { $0.id == id }
     }
 
@@ -92,9 +114,13 @@ final class RepositoryViewModel {
         isLoading = false
     }
 
-    /// Lädt die nächste Commit-Seite nach (Infinite Scrolling).
-    /// Wird vom Scroll-Indikator am Listenende via .onAppear ausgelöst.
+    /// Lädt die nächste Seite nach — normale Liste oder Suchtreffer, je nach Modus.
     func loadMore() async {
+        if isSearchActive {
+            guard searchCanLoadMore, !isSearching else { return }
+            await performSearch(reset: false)
+            return
+        }
         guard canLoadMore, !isLoadingMore, !isLoading else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
@@ -193,6 +219,58 @@ final class RepositoryViewModel {
         }
     }
 
+    // MARK: - Suche (Such-State, Debounce, Paging)
+
+    /// Aktualisiert die Suchkriterien und löst (entprellt) eine neue Suche aus.
+    /// Bei leeren Kriterien wird der Such-State sofort geleert.
+    func updateSearch(_ new: CommitSearchCriteria) {
+        searchCriteria = new
+        searchTask?.cancel()
+        guard new.isActive else {
+            searchResults = []
+            searchGraphRows = []
+            searchCanLoadMore = true
+            searchPagedCount = 0
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await performSearch(reset: true)
+        }
+    }
+
+    private func performSearch(reset: Bool) async {
+        if reset {
+            searchPagedCount = 0
+            searchCanLoadMore = true
+        }
+        guard searchCanLoadMore else { return }
+        isSearching = true
+        defer { isSearching = false }
+        do {
+            let pageSize = AppSettings.commitBatchSize
+            let page = try await service.searchCommits(
+                criteria: searchCriteria,
+                limit: pageSize,
+                skip: searchPagedCount
+            )
+            if reset {
+                searchResults = page
+            } else {
+                let existing = Set(searchResults.map(\.sha))
+                let unique = page.filter { !existing.contains($0.sha) }
+                searchResults.append(contentsOf: unique)
+                searchResults.sort { $0.date > $1.date }
+            }
+            searchPagedCount += page.count
+            if page.count < pageSize { searchCanLoadMore = false }
+            searchGraphRows = CommitGraphBuilder.build(from: searchResults)
+        } catch {
+            // Suchfehler still ignorieren — leeres Ergebnis bleibt sichtbar
+        }
+    }
+
     /// Liest die (nicht-geheimen) Remote-Angaben aus dem Bookmark und das Passwort/Token
     /// ausschließlich aus dem Keychain (strikt an `repository.id` gebunden).
     private func credentials() -> (remoteURL: String?, username: String?, password: String?) {
@@ -207,9 +285,11 @@ final class RepositoryViewModel {
     /// Scrollt auch dann, wenn der Commit bereits ausgewählt war (wiederholter Klick,
     /// oder Remote-Branch zeigt auf denselben Commit wie der lokale Branch).
     func selectCommit(bySha sha: String) {
+        // Bei aktiver Suche zuerst in Suchergebnissen, dann in der normalen Liste.
+        let pool = isSearchActive ? searchResults + commits : commits
         // Exaktes Matching zuerst (voller SHA), dann Präfix-Fallback (Kurz-SHA).
-        let commit = commits.first(where: { $0.sha == sha })
-                  ?? commits.first(where: { $0.sha.hasPrefix(sha) })
+        let commit = pool.first(where: { $0.sha == sha })
+                  ?? pool.first(where: { $0.sha.hasPrefix(sha) })
         guard let commit else {
             // Während eines Ladevorgangs kann der Stand noch veraltet sein — kein Fehler.
             guard !isLoading else { return }

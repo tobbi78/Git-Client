@@ -71,21 +71,25 @@ struct DiffView: View {
 
     private func diffContent(_ diff: CommitDiff) -> some View {
         HSplitView {
-            // Dateiliste
+            // Dateiliste: etwas schmaler gedeckelt, damit der Patch mehr Raum bekommt
             fileList(diff.files)
-                .frame(minWidth: 180, idealWidth: 220, maxWidth: 300)
+                .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
 
-            // Patch der ausgewählten Datei
-            if let fileID = selectedFileID,
-               let file = diff.files.first(where: { $0.id == fileID }) {
-                patchView(file)
-            } else if let first = diff.files.first {
-                patchView(first)
-            } else {
-                Text("Keine geänderten Dateien.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Patch der ausgewählten Datei — Mindestbreite damit der Code-Bereich
+            // nicht zu eng wird wenn die Dateiliste breit gezogen wird.
+            Group {
+                if let fileID = selectedFileID,
+                   let file = diff.files.first(where: { $0.id == fileID }) {
+                    patchView(file)
+                } else if let first = diff.files.first {
+                    patchView(first)
+                } else {
+                    Text("Keine geänderten Dateien.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .frame(minWidth: 360, maxWidth: .infinity)
         }
     }
 

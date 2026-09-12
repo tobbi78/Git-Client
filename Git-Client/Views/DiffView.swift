@@ -72,25 +72,30 @@ struct DiffView: View {
 
     private func diffContent(_ diff: CommitDiff) -> some View {
         HSplitView {
-            // Dateiliste: etwas schmaler gedeckelt, damit der Patch mehr Raum bekommt
             fileList(diff.files)
                 .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
+            patchColumn(diff: diff)
+        }
+        // Explizite Größe damit NSSplitView den vollen verfügbaren Platz nutzt
+        // statt sich nach dem intrinsischen Inhalt zu richten.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-            // Patch der ausgewählten Datei — Mindestbreite damit der Code-Bereich
-            // nicht zu eng wird wenn die Dateiliste breit gezogen wird.
-            Group {
-                if let fileID = selectedFileID,
-                   let file = diff.files.first(where: { $0.id == fileID }) {
-                    patchView(file)
-                } else if let first = diff.files.first {
-                    patchView(first)
-                } else {
-                    Text("Keine geänderten Dateien.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(minWidth: 360, maxWidth: .infinity)
+    // Extraktion verhindert Group-Wrapper: Frame-Constraints gelten direkt
+    // für die Pane-View, sodass NSSplitView die Mindestbreite korrekt ausliest.
+    @ViewBuilder
+    private func patchColumn(diff: CommitDiff) -> some View {
+        if let fileID = selectedFileID,
+           let file = diff.files.first(where: { $0.id == fileID }) {
+            patchView(file)
+                .frame(minWidth: 360, maxWidth: .infinity)
+        } else if let first = diff.files.first {
+            patchView(first)
+                .frame(minWidth: 360, maxWidth: .infinity)
+        } else {
+            Text("Keine geänderten Dateien.")
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -112,25 +117,30 @@ struct DiffView: View {
     }
 
     private func patchView(_ file: DiffFile) -> some View {
-        ScrollView([.vertical, .horizontal]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(file.hunks) { hunk in
-                    // Hunk-Header
-                    Text(hunk.header)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.08))
+        // GeometryReader misst die Breite des sichtbaren Panels (außerhalb der
+        // ScrollView). Jede Zeile bekommt minWidth: geo.size.width, damit Zeilen-
+        // Hintergründe die volle Panel-Breite füllen — auch wenn der Text kürzer ist.
+        // Längere Zeilen überschreiten geo.size.width und aktivieren den H-Scroll.
+        GeometryReader { geo in
+            ScrollView([.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(file.hunks) { hunk in
+                        Text(hunk.header)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .frame(minWidth: geo.size.width, alignment: .leading)
+                            .background(Color.secondary.opacity(0.08))
 
-                    ForEach(hunk.lines) { line in
-                        DiffLineView(line: line)
+                        ForEach(hunk.lines) { line in
+                            DiffLineView(line: line, minWidth: geo.size.width)
+                        }
                     }
                 }
             }
+            .background(Color(nsColor: .textBackgroundColor))
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 }
 
@@ -138,23 +148,23 @@ struct DiffView: View {
 
 private struct DiffLineView: View {
     let line: DiffLine
+    var minWidth: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 0) {
-            // Marker (+/-/ )
             Text(marker)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(markerColor)
                 .frame(width: 14, alignment: .center)
 
-            // Zeileninhalt (ohne führendes +/-/ )
             Text(lineContent)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(textColor)
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.trailing, 8)
         }
+        .frame(minWidth: minWidth, alignment: .leading)
         .padding(.vertical, 1)
         .background(backgroundColor)
     }

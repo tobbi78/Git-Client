@@ -359,7 +359,7 @@ struct MainWindowView: View {
                         DatePicker("", selection: Binding(
                             get: { since },
                             set: { criteria.since = $0; vm.updateSearch(criteria) }
-                        ), displayedComponents: .date)
+                        ), displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
                         .font(.caption)
                     }
@@ -383,7 +383,7 @@ struct MainWindowView: View {
                         DatePicker("", selection: Binding(
                             get: { until },
                             set: { criteria.until = $0; vm.updateSearch(criteria) }
-                        ), displayedComponents: .date)
+                        ), displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
                         .font(.caption)
                     }

@@ -210,6 +210,84 @@ actor GitService {
         )
     }
 
+    // MARK: - Commit-Suche
+
+    /// Durchsucht das gesamte Repository nach Commits, die `criteria` erfüllen.
+    /// Unterstützt: Nachricht (--grep), Autor (--author), Datumsbereich (--since/--until),
+    /// SHA-Präfix (git rev-parse --disambiguate oder in-memory-Filter).
+    ///
+    /// Alle Kriterien werden als UND verknüpft (git log verhält sich so standardmäßig).
+    func searchCommits(
+        criteria: CommitSearchCriteria,
+        limit: Int = 2000,
+        skip: Int = 0
+    ) async throws -> [Commit] {
+        let msgTrimmed    = criteria.message.trimmingCharacters(in: .whitespaces)
+        let authorTrimmed = criteria.author.trimmingCharacters(in: .whitespaces)
+        let shaTrimmed    = criteria.sha.trimmingCharacters(in: .whitespaces)
+
+        // Sonderfall: SHA als einziges Kriterium → git rev-parse --disambiguate
+        let shaOnly = !shaTrimmed.isEmpty
+            && msgTrimmed.isEmpty && authorTrimmed.isEmpty
+            && criteria.since == nil && criteria.until == nil
+        if shaOnly {
+            return try await searchByShaOnly(prefix: shaTrimmed)
+        }
+
+        // Normaler git-log-Pfad
+        let format = "--pretty=format:\(GitLogParser.formatString)"
+        var args = ["log", "--all", "--date-order", "-i", format, "-\(limit)"]
+        if skip > 0 { args.append("--skip=\(skip)") }
+        if !msgTrimmed.isEmpty    { args.append("--grep=\(msgTrimmed)") }
+        if !authorTrimmed.isEmpty { args.append("--author=\(authorTrimmed)") }
+        if let since = criteria.since {
+            let iso = ISO8601DateFormatter()
+            args.append("--since=\(iso.string(from: since))")
+        }
+        if let until = criteria.until {
+            let iso = ISO8601DateFormatter()
+            args.append("--until=\(iso.string(from: until))")
+        }
+
+        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+        var results = GitLogParser.parse(output)
+
+        // SHA-Filter: wenn SHA zusammen mit anderen Kriterien angegeben → in-memory
+        if !shaTrimmed.isEmpty {
+            let lower = shaTrimmed.lowercased()
+            results = results.filter {
+                $0.sha.hasPrefix(lower) || $0.shortSha.hasPrefix(lower)
+            }
+        }
+        return results
+    }
+
+    /// SHA-only-Pfad: nutzt `git rev-parse --disambiguate` um alle passenden vollen
+    /// SHAs für einen Präfix zu finden und lädt jeden einzeln.
+    private func searchByShaOnly(prefix: String) async throws -> [Commit] {
+        let result = try? await runner.run(
+            ["rev-parse", "--disambiguate=\(prefix.lowercased())"],
+            workingDirectory: repositoryPath
+        )
+        let shas = (result?.stdout ?? "")
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if shas.isEmpty { return [] }
+
+        var commits: [Commit] = []
+        await withTaskGroup(of: Commit?.self) { group in
+            for sha in shas {
+                group.addTask { await self.loadSingleCommit(sha: sha) }
+            }
+            for await commit in group {
+                if let c = commit { commits.append(c) }
+            }
+        }
+        return commits.sorted { $0.date > $1.date }
+    }
+
     // MARK: - Diff
 
     func loadDiff(sha: String) async throws -> CommitDiff {

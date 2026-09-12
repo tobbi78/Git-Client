@@ -1525,3 +1525,167 @@ struct GitServiceAheadBehindTests {
         #expect(counts == nil)
     }
 }
+
+// MARK: - CommitSearchCriteriaTests
+
+@Suite("CommitSearchCriteria")
+struct CommitSearchCriteriaTests {
+
+    @Test("isActive ist false bei leeren Kriterien")
+    func emptyIsNotActive() {
+        #expect(!CommitSearchCriteria().isActive)
+    }
+
+    @Test("isActive ist true wenn Nachricht gesetzt")
+    func messageActivates() {
+        var c = CommitSearchCriteria(); c.message = "fix"
+        #expect(c.isActive)
+    }
+
+    @Test("isActive ist true wenn Autor gesetzt")
+    func authorActivates() {
+        var c = CommitSearchCriteria(); c.author = "alice"
+        #expect(c.isActive)
+    }
+
+    @Test("isActive ist true wenn SHA gesetzt")
+    func shaActivates() {
+        var c = CommitSearchCriteria(); c.sha = "abc123"
+        #expect(c.isActive)
+    }
+
+    @Test("isActive ist true wenn since gesetzt")
+    func sinceActivates() {
+        var c = CommitSearchCriteria(); c.since = Date()
+        #expect(c.isActive)
+    }
+
+    @Test("isActive ist true wenn until gesetzt")
+    func untilActivates() {
+        var c = CommitSearchCriteria(); c.until = Date()
+        #expect(c.isActive)
+    }
+
+    @Test("Nur Leerzeichen gilt als inaktiv")
+    func whitespaceIsInactive() {
+        var c = CommitSearchCriteria(); c.message = "   "; c.author = "  "
+        #expect(!c.isActive)
+    }
+}
+
+// MARK: - GitServiceSearchTests
+
+@Suite("GitService – Commit-Suche")
+struct GitServiceSearchTests {
+
+    // Hilfsfunktion: temporäres Repo mit N Commits
+    private func makeSearchRepo() throws -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("searchRepo-\(UUID())")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        func sh(_ args: String...) throws {
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            p.arguments = args; try p.run(); p.waitUntilExit()
+        }
+        try sh("git", "-C", tmp.path, "init")
+        try sh("git", "-C", tmp.path, "config", "user.email", "alice@example.com")
+        try sh("git", "-C", tmp.path, "config", "user.name", "Alice")
+
+        let file = tmp.appendingPathComponent("f.txt")
+        // Commit 1 — Autor Alice, Nachricht "fix: crash bug"
+        try "a".write(to: file, atomically: true, encoding: .utf8)
+        try sh("git", "-C", tmp.path, "add", "."); try sh("git", "-C", tmp.path, "commit", "-m", "fix: crash bug")
+        // Commit 2 — Autor Alice, Nachricht "feat: add login"
+        try "b".write(to: file, atomically: true, encoding: .utf8)
+        try sh("git", "-C", tmp.path, "add", "."); try sh("git", "-C", tmp.path, "commit", "-m", "feat: add login")
+        // Commit 3 — Autor Bob, Nachricht "docs: readme"
+        try sh("git", "-C", tmp.path, "config", "user.email", "bob@example.com")
+        try sh("git", "-C", tmp.path, "config", "user.name", "Bob")
+        try "c".write(to: file, atomically: true, encoding: .utf8)
+        try sh("git", "-C", tmp.path, "add", "."); try sh("git", "-C", tmp.path, "commit", "-m", "docs: readme")
+        return tmp
+    }
+
+    @Test("Suche nach Nachricht liefert passende Commits")
+    func searchByMessage() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        var c = CommitSearchCriteria(); c.message = "fix"
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.count == 1)
+        #expect(results[0].subject.contains("fix"))
+    }
+
+    @Test("Suche ist case-insensitive")
+    func searchCaseInsensitive() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        var c = CommitSearchCriteria(); c.message = "FIX"
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.count == 1)
+    }
+
+    @Test("Suche nach Autor liefert nur dessen Commits")
+    func searchByAuthor() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        var c = CommitSearchCriteria(); c.author = "Bob"
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.count == 1)
+        #expect(results[0].subject.contains("docs"))
+    }
+
+    @Test("Suche nach Autor per E-Mail liefert deren Commits")
+    func searchByAuthorEmail() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        var c = CommitSearchCriteria(); c.author = "alice@example.com"
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.count == 2)
+    }
+
+    @Test("Kombination Nachricht+Autor liefert Schnittmenge")
+    func searchByMessageAndAuthor() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        var c = CommitSearchCriteria(); c.message = "feat"; c.author = "Alice"
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.count == 1)
+        #expect(results[0].subject.contains("feat"))
+    }
+
+    @Test("Leere Kriterien liefern alle Commits")
+    func searchWithEmptyCriteria() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let results = try await GitService(repositoryPath: repo)
+            .searchCommits(criteria: CommitSearchCriteria())
+        #expect(results.count == 3)
+    }
+
+    @Test("SHA-Präfixsuche findet passenden Commit")
+    func searchByShaPrefix() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        // Ersten Commit-SHA laden
+        let allCommits = try await GitService(repositoryPath: repo)
+            .loadCommits(limit: 10, skip: 0)
+        guard let first = allCommits.first else { return }
+        let prefix = String(first.sha.prefix(5))
+        var c = CommitSearchCriteria(); c.sha = prefix
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.contains { $0.sha == first.sha })
+    }
+
+    @Test("Datumsbereich schließt Commits außerhalb aus")
+    func searchByDateRange() async throws {
+        let repo = try makeSearchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        // Future range: keine Commits
+        var c = CommitSearchCriteria()
+        c.since = Date(timeIntervalSinceNow: 3600)
+        c.until = Date(timeIntervalSinceNow: 7200)
+        let results = try await GitService(repositoryPath: repo).searchCommits(criteria: c)
+        #expect(results.isEmpty)
+    }
+}

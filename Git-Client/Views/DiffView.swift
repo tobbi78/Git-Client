@@ -72,25 +72,30 @@ struct DiffView: View {
 
     private func diffContent(_ diff: CommitDiff) -> some View {
         HSplitView {
-            // Dateiliste: etwas schmaler gedeckelt, damit der Patch mehr Raum bekommt
             fileList(diff.files)
                 .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
+            patchColumn(diff: diff)
+        }
+        // Explizite Größe damit NSSplitView den vollen verfügbaren Platz nutzt
+        // statt sich nach dem intrinsischen Inhalt zu richten.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-            // Patch der ausgewählten Datei — Mindestbreite damit der Code-Bereich
-            // nicht zu eng wird wenn die Dateiliste breit gezogen wird.
-            Group {
-                if let fileID = selectedFileID,
-                   let file = diff.files.first(where: { $0.id == fileID }) {
-                    patchView(file)
-                } else if let first = diff.files.first {
-                    patchView(first)
-                } else {
-                    Text("Keine geänderten Dateien.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(minWidth: 360, maxWidth: .infinity)
+    // Extraktion verhindert Group-Wrapper: Frame-Constraints gelten direkt
+    // für die Pane-View, sodass NSSplitView die Mindestbreite korrekt ausliest.
+    @ViewBuilder
+    private func patchColumn(diff: CommitDiff) -> some View {
+        if let fileID = selectedFileID,
+           let file = diff.files.first(where: { $0.id == fileID }) {
+            patchView(file)
+                .frame(minWidth: 360, maxWidth: .infinity)
+        } else if let first = diff.files.first {
+            patchView(first)
+                .frame(minWidth: 360, maxWidth: .infinity)
+        } else {
+            Text("Keine geänderten Dateien.")
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

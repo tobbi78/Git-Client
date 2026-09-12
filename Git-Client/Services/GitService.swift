@@ -51,12 +51,13 @@ actor GitService {
 
     // MARK: - Commit-Historie
 
-    func loadCommits(limit: Int = 1000) async throws -> [Commit] {
+    /// Lädt bis zu `limit` Commits, optional ab Position `skip` (für Paginierung).
+    /// `--date-order` bleibt stabil über aufeinanderfolgende Pages solange sich Refs nicht ändern.
+    func loadCommits(limit: Int = 2000, skip: Int = 0) async throws -> [Commit] {
         let format = "--pretty=format:\(GitLogParser.formatString)"
-        let output = try await runner.runOrThrow(
-            ["log", "--all", "--date-order", format, "-\(limit)"],
-            workingDirectory: repositoryPath
-        )
+        var args = ["log", "--all", "--date-order", format, "-\(limit)"]
+        if skip > 0 { args.append("--skip=\(skip)") }
+        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
         return GitLogParser.parse(output)
     }
 

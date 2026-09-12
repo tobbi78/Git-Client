@@ -52,6 +52,9 @@ struct MainWindowView: View {
             // sofort breit genug ist — unabhängig davon ob ein Commit ausgewählt ist.
             .frame(minWidth: 640, maxWidth: .infinity)
         }
+        // Fenster-Mindestbreite: verhindert, dass das Fenster in der schmalen
+        // Größe von RepositoryBrowserView bleibt, wenn ein Repository geöffnet wird.
+        .frame(minWidth: 900, minHeight: 600)
         .navigationTitle(repository.name)
         .navigationSubtitle(subtitleText)
         .toolbar {

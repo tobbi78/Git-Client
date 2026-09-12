@@ -25,6 +25,8 @@ enum DiffParser {
             var newPath = ""
             var hunks: [DiffHunk] = []
             var hunkIndex = 0
+            var addedLines = 0
+            var deletedLines = 0
             i += 1
 
             // Header-Zeilen überspringen bis zur ersten @@ oder nächstem diff
@@ -49,8 +51,10 @@ enum DiffParser {
                         let type: DiffLineType
                         if hl.hasPrefix("+") {
                             type = .addition
+                            addedLines += 1
                         } else if hl.hasPrefix("-") {
                             type = .deletion
+                            deletedLines += 1
                         } else {
                             type = .context
                         }
@@ -73,7 +77,9 @@ enum DiffParser {
                     id: fileIndex,
                     oldPath: oldPath.isEmpty ? newPath : oldPath,
                     newPath: newPath.isEmpty ? oldPath : newPath,
-                    hunks: hunks
+                    hunks: hunks,
+                    addedLines: addedLines,
+                    deletedLines: deletedLines
                 ))
                 fileIndex += 1
             }

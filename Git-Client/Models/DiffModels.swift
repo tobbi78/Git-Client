@@ -24,11 +24,17 @@ struct DiffHunk: Identifiable, Sendable {
     let lines: [DiffLine]
 }
 
+enum DiffFileChangeType: Sendable {
+    case added, deleted, modified, renamed
+}
+
 struct DiffFile: Identifiable, Sendable {
     let id: Int
     let oldPath: String
     let newPath: String
     let hunks: [DiffHunk]
+    let addedLines: Int
+    let deletedLines: Int
 
     var displayName: String {
         if oldPath == newPath { return newPath }
@@ -37,6 +43,13 @@ struct DiffFile: Identifiable, Sendable {
 
     var isNew: Bool { oldPath == "/dev/null" }
     var isDeleted: Bool { newPath == "/dev/null" }
+
+    var changeType: DiffFileChangeType {
+        if isNew     { return .added }
+        if isDeleted { return .deleted }
+        if oldPath != newPath { return .renamed }
+        return .modified
+    }
 }
 
 struct CommitDiff: Sendable {

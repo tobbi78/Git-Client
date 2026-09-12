@@ -11,6 +11,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct MainWindowView: View {
     @Environment(AppModel.self) private var appModel
@@ -19,6 +20,10 @@ struct MainWindowView: View {
     @State private var isBranchesExpanded = false
     @State private var isTagsExpanded = false
     @State private var expandedRemotes: [String: Bool] = [:]
+
+    // Breite der Graph-Spalte in der Commit-Liste; per Drag ziehbar
+    @State private var graphColumnWidth: CGFloat = 200
+    @State private var graphColumnWidthAtDragStart: CGFloat = 200
 
     private var vm: RepositoryViewModel? { appModel.repositoryViewModel }
 
@@ -43,6 +48,9 @@ struct MainWindowView: View {
                 commitDetail
                     .frame(minHeight: 180)
             }
+            // Mindestbreite erzwingen, damit die Detail-Spalte beim Öffnen
+            // sofort breit genug ist — unabhängig davon ob ein Commit ausgewählt ist.
+            .frame(minWidth: 640, maxWidth: .infinity)
         }
         .navigationTitle(repository.name)
         .navigationSubtitle(subtitleText)
@@ -304,11 +312,13 @@ struct MainWindowView: View {
     }
 
     private static let rowHeight: CGFloat = 48
+    // Abstand zwischen Commit-Zeilen (Luft zwischen den Einträgen)
+    private static let rowSpacing: CGFloat = 6
 
     private func commitList(vm: RepositoryViewModel) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: Self.rowSpacing) {
                     // Hinweis, wenn ein Branch-Tip nicht in der geladenen Liste ist
                     if let msg = vm.branchJumpMessage {
                         Text(msg)
@@ -321,7 +331,19 @@ struct MainWindowView: View {
                     ForEach(vm.graphRows, id: \.commit.id) { row in
                         let isSelected = vm.selectedCommitID == row.commit.id
                         HStack(spacing: 0) {
+                            // GRAPH-SPALTE: feste (ziehbare) Breite, Graph wird rechts
+                            // abgeschnitten wenn er breiter als die Spalte ist.
+                            // Der Trenner daneben lässt sich ziehen, um mehr Lanes sichtbar
+                            // zu machen.
                             CommitGraphView(row: row, rowHeight: Self.rowHeight)
+                                .frame(width: graphColumnWidth, height: Self.rowHeight,
+                                       alignment: .leading)
+                                .clipped()
+
+                            // ZIEHBARER TRENNER
+                            graphColumnDivider
+
+                            // BESCHREIBUNGS-SPALTE: füllt den restlichen Platz
                             CommitRowView(commit: row.commit)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 6)
@@ -349,6 +371,31 @@ struct MainWindowView: View {
                 }
             }
         }
+    }
+
+    /// Schmaler ziehbarer Balken zwischen Graph- und Beschreibungs-Spalte.
+    /// Da er in jeder Zeile erscheint und alle denselben `graphColumnWidth`-State
+    /// teilen, wirkt er wie eine einzige durchgehende Trennlinie.
+    private var graphColumnDivider: some View {
+        Color.clear
+            .frame(width: 7, height: Self.rowHeight)
+            // Sichtbare 1pt-Linie in der Mitte des 7pt-Trefferbereichs
+            .overlay(Color.secondary.opacity(0.25).frame(width: 1))
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering { NSCursor.resizeLeftRight.push() }
+                else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let proposed = graphColumnWidthAtDragStart + value.translation.width
+                        graphColumnWidth = min(max(proposed, 60), 600)
+                    }
+                    .onEnded { _ in
+                        graphColumnWidthAtDragStart = graphColumnWidth
+                    }
+            )
     }
 
     // MARK: - Detail / Diff
@@ -406,7 +453,7 @@ private struct CommitRowView: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 1) {
             if !commit.refNames.isEmpty {
                 refBadges
             }
@@ -426,7 +473,7 @@ private struct CommitRowView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
     }
 
     private var refBadges: some View {

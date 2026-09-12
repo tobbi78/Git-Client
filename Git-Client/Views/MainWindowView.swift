@@ -69,6 +69,22 @@ struct MainWindowView: View {
                 .help("Commits, Branches und Tags neu laden")
             }
         }
+        // Fenster beim Öffnen eines Repositories auf Mindestgröße bringen.
+        // .frame(minWidth:) auf einem nicht-root-View erzwingt keine Fenster-Vergrößerung;
+        // daher direkter NSWindow-Zugriff per keyWindow.
+        .onAppear {
+            DispatchQueue.main.async {
+                guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+                let minW: CGFloat = 900
+                let minH: CGFloat = 600
+                if window.frame.size.width < minW || window.frame.size.height < minH {
+                    window.setContentSize(CGSize(
+                        width:  max(minW, window.frame.size.width),
+                        height: max(minH, window.frame.size.height)
+                    ))
+                }
+            }
+        }
     }
 
     // MARK: - Sidebar
@@ -199,6 +215,7 @@ struct MainWindowView: View {
             }
             commitHistory
         }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -296,12 +313,14 @@ struct MainWindowView: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(error)
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if vm.commits.isEmpty {
                 ContentUnavailableView(
                     "Keine Commits",
                     systemImage: "tray",
                     description: Text("Dieses Repository enthält noch keine Commits.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 commitList(vm: vm)
             }
@@ -311,9 +330,10 @@ struct MainWindowView: View {
         }
     }
 
-    private static let rowHeight: CGFloat = 48
-    // Abstand zwischen Commit-Zeilen (Luft zwischen den Einträgen)
-    private static let rowSpacing: CGFloat = 6
+    // Höhere Zeilen geben Luft zwischen Commits; spacing: 0 hält die
+    // Graph-Linien lückenlos verbunden (kein Gap zwischen Zeilen).
+    private static let rowHeight: CGFloat = 56
+    private static let rowSpacing: CGFloat = 0
 
     private func commitList(vm: RepositoryViewModel) -> some View {
         ScrollViewReader { proxy in
@@ -363,6 +383,7 @@ struct MainWindowView: View {
             // Scroll wird am Token ausgelöst, nicht an der ID — dadurch funktioniert
             // der Sprung auch wenn der Commit bereits ausgewählt war (z.B. origin/main
             // zeigt auf denselben Commit wie main, kein ID-Wechsel nötig).
+            .frame(maxWidth: .infinity)
             .onChange(of: vm.scrollRequestToken) { _, _ in
                 if let id = vm.scrollTargetID {
                     withAnimation(.easeInOut(duration: 0.25)) {
@@ -414,6 +435,7 @@ struct MainWindowView: View {
                 systemImage: "doc.text.magnifyingglass",
                 description: Text("Wähle einen Commit, um Details und Diff anzuzeigen.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

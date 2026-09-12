@@ -20,7 +20,14 @@ final class RepositoryViewModel {
     var branches: [Branch] = []
     var tags: [GitTag] = []
     var isLoading = false
+    var isLoadingMore = false   // Nachlade-Vorgang läuft
+    var canLoadMore = true      // false sobald git log < pageSize zurückgibt
     var errorMessage: String? = nil
+
+    /// Anzahl der per git-log-Paginierung geladenen Commits (Basis für --skip).
+    /// Nicht identisch mit commits.count, da loadMissingBranchTips weitere Commits injiziert.
+    private var pagedCount = 0
+    private var pageSize: Int { AppSettings.commitBatchSize }
 
     // Remote-Sync-Zustand
     var behindCount = 0          // Commits auf dem Server, die lokal fehlen
@@ -59,15 +66,22 @@ final class RepositoryViewModel {
     func load() async {
         isLoading = true
         errorMessage = nil
+        // Paging-State zurücksetzen
+        pagedCount = 0
+        canLoadMore = true
         do {
-            async let commitsTask = service.loadCommits()
+            // Commits, Branches und Tags parallel laden
+            async let commitsTask = service.loadCommits(limit: pageSize, skip: 0)
             async let branchesTask = service.loadBranches()
             async let tagsTask = service.loadTags()
-            commits = try await commitsTask
+            let firstPage = try await commitsTask
+            commits = firstPage
             branches = try await branchesTask
             tags = try await tagsTask
+            pagedCount = firstPage.count
+            // Weniger als pageSize zurück → keine weitere Seite vorhanden
+            canLoadMore = (firstPage.count == pageSize)
             // Branch-Tips, die außerhalb des geladenen Fensters liegen, einzeln nachladen.
-            // Das passiert bei großen Repos oder alten Feature-Branches.
             await loadMissingBranchTips()
             graphRows = CommitGraphBuilder.build(from: commits)
         } catch {
@@ -76,6 +90,31 @@ final class RepositoryViewModel {
         hasRemote = await service.hasRemote()
         await refreshAheadBehind()
         isLoading = false
+    }
+
+    /// Lädt die nächste Commit-Seite nach (Infinite Scrolling).
+    /// Wird vom Scroll-Indikator am Listenende via .onAppear ausgelöst.
+    func loadMore() async {
+        guard canLoadMore, !isLoadingMore, !isLoading else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let next = try await service.loadCommits(limit: pageSize, skip: pagedCount)
+            pagedCount += next.count
+            if next.count < pageSize { canLoadMore = false }
+            // Deduplizieren: Branch-Tips, die bereits per loadMissingBranchTips injiziert wurden
+            let existing = Set(commits.map(\.sha))
+            let unique = next.filter { !existing.contains($0.sha) }
+            guard !unique.isEmpty else {
+                if next.count < pageSize { canLoadMore = false }
+                return
+            }
+            commits.append(contentsOf: unique)
+            commits.sort { $0.date > $1.date }
+            graphRows = CommitGraphBuilder.build(from: commits)
+        } catch {
+            // Fehler still ignorieren — canLoadMore bleibt true für erneuten Versuch beim nächsten Scroll
+        }
     }
 
     /// Lädt Branch-Tip-Commits nach, die noch nicht in `commits` enthalten sind.

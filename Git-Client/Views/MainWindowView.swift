@@ -378,6 +378,26 @@ struct MainWindowView: View {
                         .onTapGesture { vm.selectedCommitID = row.commit.id }
                         .id(row.commit.id)
                     }
+
+                    // Lazy-Loading-Indikator: erscheint erst wenn das Listenende
+                    // sichtbar wird (LazyVStack rendert nur sichtbare Kinder).
+                    // .onAppear löst die nächste Batch aus → echtes Infinite Scrolling.
+                    if vm.canLoadMore {
+                        HStack {
+                            Spacer()
+                            if vm.isLoadingMore {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                // Unsichtbarer Trigger: onAppear feuert sobald diese
+                                // Zeile in den sichtbaren Bereich scrollt.
+                                Color.clear.frame(height: 1)
+                            }
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .onAppear { Task { await vm.loadMore() } }
+                    }
                 }
             }
             // Scroll wird am Token ausgelöst, nicht an der ID — dadurch funktioniert

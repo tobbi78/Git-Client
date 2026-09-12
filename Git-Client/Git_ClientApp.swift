@@ -27,5 +27,10 @@ struct Git_ClientApp: App {
             .environment(appModel)
         }
         .defaultSize(width: 1200, height: 780)
+
+        // Einstellungsfenster (⌘,)
+        Settings {
+            SettingsView()
+        }
     }
 }

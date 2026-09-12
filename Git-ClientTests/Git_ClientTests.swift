@@ -1086,3 +1086,154 @@ struct GitServiceParserTests {
         #expect(tags[1].targetSha == "commitC")
     }
 }
+
+// MARK: - AppSettings
+
+@Suite("AppSettings")
+struct AppSettingsTests {
+
+    @Test("Standardwert ist 2000")
+    func defaultBatchSize() {
+        // Wenn der Key nie gesetzt wurde (integer = 0), muss der Default greifen.
+        UserDefaults.standard.removeObject(forKey: AppSettings.commitBatchSizeKey)
+        #expect(AppSettings.commitBatchSize == AppSettings.defaultCommitBatchSize)
+    }
+
+    @Test("Gespeicherter Wert wird korrekt gelesen")
+    func storedValueIsRead() {
+        UserDefaults.standard.set(500, forKey: AppSettings.commitBatchSizeKey)
+        #expect(AppSettings.commitBatchSize == 500)
+        UserDefaults.standard.removeObject(forKey: AppSettings.commitBatchSizeKey)
+    }
+
+    @Test("Minimumwert wird durchgesetzt")
+    func minimumEnforced() {
+        // commitBatchSize gibt mindestens minimumCommitBatchSize zurück
+        UserDefaults.standard.set(1, forKey: AppSettings.commitBatchSizeKey)
+        #expect(AppSettings.commitBatchSize == AppSettings.minimumCommitBatchSize)
+        UserDefaults.standard.removeObject(forKey: AppSettings.commitBatchSizeKey)
+    }
+
+    @Test("Wert 0 (nie gesetzt) ergibt Default")
+    func zeroYieldsDefault() {
+        UserDefaults.standard.set(0, forKey: AppSettings.commitBatchSizeKey)
+        #expect(AppSettings.commitBatchSize == AppSettings.defaultCommitBatchSize)
+        UserDefaults.standard.removeObject(forKey: AppSettings.commitBatchSizeKey)
+    }
+}
+
+// MARK: - GitService Paging (Integration)
+
+@Suite("GitService Paging")
+@MainActor
+struct GitServicePagingTests {
+
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("git-paging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        // 8 Commits erstellen
+        for i in 1...8 {
+            let file = repoURL.appendingPathComponent("file\(i).txt")
+            try "content\(i)".write(to: file, atomically: true, encoding: .utf8)
+            try sh("git", "-C", repoURL.path, "add", ".")
+            try sh("git", "-C", repoURL.path, "commit", "-m", "Commit \(i)")
+        }
+    }
+
+    @Test("loadCommits(limit:skip:0) liefert erste Seite")
+    func firstPage() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let page = try await svc.loadCommits(limit: 3, skip: 0)
+        #expect(page.count == 3)
+    }
+
+    @Test("loadCommits mit skip überspringt erste N Commits")
+    func secondPage() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let page1 = try await svc.loadCommits(limit: 3, skip: 0)
+        let page2 = try await svc.loadCommits(limit: 3, skip: 3)
+        // Kein Commit darf in beiden Seiten vorkommen
+        let shas1 = Set(page1.map(\.sha))
+        let shas2 = Set(page2.map(\.sha))
+        #expect(shas1.isDisjoint(with: shas2))
+    }
+
+    @Test("Letzte Seite liefert weniger als limit (Ende erkannt)")
+    func lastPageSmallerThanLimit() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        // 8 Commits, skip 6 → noch 2 übrig
+        let lastPage = try await svc.loadCommits(limit: 5, skip: 6)
+        #expect(lastPage.count == 2)
+        #expect(lastPage.count < 5)
+    }
+
+    @Test("skip jenseits aller Commits ergibt leeres Array")
+    func skipBeyondEnd() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let page = try await svc.loadCommits(limit: 10, skip: 100)
+        #expect(page.isEmpty)
+    }
+
+    @Test("Alle Seiten zusammen ergeben alle Commits ohne Duplikate")
+    func allPagesNoOverlap() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        var all: [Commit] = []
+        var skip = 0
+        let pageSize = 3
+        while true {
+            let page = try await svc.loadCommits(limit: pageSize, skip: skip)
+            all.append(contentsOf: page)
+            skip += page.count
+            if page.count < pageSize { break }
+        }
+        let unique = Set(all.map(\.sha))
+        #expect(unique.count == all.count)   // keine Duplikate
+        #expect(all.count == 8)              // alle 8 Commits
+    }
+}
+
+// MARK: - RepositoryViewModel Paging
+
+@Suite("RepositoryViewModel Paging")
+@MainActor
+struct RepositoryViewModelPagingTests {
+
+    private func makeBookmark() -> RepositoryBookmark {
+        RepositoryBookmark(name: "test", path: URL(fileURLWithPath: "/tmp/nonexistent"))
+    }
+
+    @Test("canLoadMore ist initial true")
+    func canLoadMoreInitial() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        #expect(vm.canLoadMore)
+    }
+
+    @Test("isLoadingMore ist initial false")
+    func isLoadingMoreInitial() {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        #expect(!vm.isLoadingMore)
+    }
+
+    @Test("loadMore() tut nichts wenn isLoading=true")
+    func loadMoreBlockedDuringLoad() async {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        vm.isLoading = true
+        // Sollte keine Exception werfen und isLoadingMore false lassen
+        await vm.loadMore()
+        #expect(!vm.isLoadingMore)
+    }
+
+    @Test("loadMore() tut nichts wenn canLoadMore=false")
+    func loadMoreBlockedWhenNoMore() async {
+        let vm = RepositoryViewModel(repository: makeBookmark())
+        vm.canLoadMore = false
+        await vm.loadMore()
+        #expect(!vm.isLoadingMore)
+    }
+}

@@ -22,14 +22,15 @@
     <a class="toc-card" href="bedienung.html">
         <div class="icon">🖥️</div>
         <h3>Bedienung</h3>
-        <p>Repositories verwalten, Commit-Graph lesen, Branches und Tags nutzen,
-           Diff anzeigen und neu laden.</p>
+        <p>Repositories verwalten und klonen, Commit-Graph lesen,
+           Lazy Loading, Branches und Tags nutzen,
+           Diff anzeigen, Einstellungen.</p>
     </a>
     <a class="toc-card" href="technik.html">
         <div class="icon">⚙️</div>
         <h3>Technische Implementierung</h3>
-        <p>Architektur, GitRunner, Graph-Algorithmus, Persistenz, Drag&amp;Drop
-           und Sicherheitskonzept (Keychain).</p>
+        <p>Architektur, GitRunner, Graph-Algorithmus, Persistenz &amp; Speicherort,
+           Lazy Loading, Drag&amp;Drop und Sicherheitskonzept (Keychain).</p>
     </a>
 </div>
 
@@ -38,11 +39,22 @@
 <h3><a href="bedienung.html">Teil A — Bedienung</a></h3>
 <ul>
     <li><a href="bedienung.html#uebersicht">Überblick</a></li>
-    <li><a href="bedienung.html#repositories">Repositories verwalten</a></li>
-    <li><a href="bedienung.html#graph">Commit-History &amp; Graph lesen</a></li>
+    <li><a href="bedienung.html#repositories">Repositories verwalten</a>
+        <ul>
+            <li><a href="bedienung.html#browser">Bookmark-Browser</a></li>
+            <li>Repository hinzufügen, klonen, öffnen, Kontextmenü</li>
+            <li>Speicherort der Verknüpfungen (<code>bookmarks.json</code>)</li>
+        </ul>
+    </li>
+    <li><a href="bedienung.html#graph">Commit-History &amp; Graph lesen</a>
+        <ul>
+            <li><a href="bedienung.html#lazyladen">Große Repositories: Lazy Loading</a></li>
+        </ul>
+    </li>
     <li><a href="bedienung.html#navigation">Branches und Tags</a></li>
     <li><a href="bedienung.html#diff">Diff ansehen</a></li>
     <li><a href="bedienung.html#reload">Neu laden</a></li>
+    <li><a href="bedienung.html#einstellungen">Einstellungen (⌘,)</a></li>
 </ul>
 
 <h3><a href="technik.html">Teil B — Technische Implementierung</a></h3>
@@ -52,9 +64,20 @@
     <li><a href="technik.html#gitservice">GitService</a></li>
     <li><a href="technik.html#parser">Parser (GitLogParser, DiffParser)</a></li>
     <li><a href="technik.html#graph">Commit-Graph-Algorithmus</a></li>
-    <li><a href="technik.html#persistenz">Persistenz &amp; BookmarkStore</a></li>
+    <li><a href="technik.html#persistenz">Persistenz &amp; BookmarkStore</a>
+        <ul>
+            <li>Speicherort (<code>~/Library/Application Support/Git-Client/bookmarks.json</code>)</li>
+            <li>Atomares Schreiben, JSON-Format</li>
+        </ul>
+    </li>
+    <li><a href="technik.html#lazyladen">Lazy Loading der Commit-Liste</a>
+        <ul>
+            <li>Paginierung via <code>git log --skip</code></li>
+            <li>AppSettings &amp; Einstellungsfenster</li>
+        </ul>
+    </li>
     <li><a href="technik.html#dragdrop">Drag &amp; Drop</a></li>
-    <li><a href="technik.html#keychain">Sicherheitskonzept Credentials (geplant)</a></li>
+    <li><a href="technik.html#keychain">Sicherheitskonzept Credentials (Keychain)</a></li>
 </ul>
 
 <footer>Git-Client · Tobias Florian</footer>

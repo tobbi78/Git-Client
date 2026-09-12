@@ -52,6 +52,14 @@
     versteckten <code>.git</code>-Unterordner).
 </p>
 
+<h4>Repository klonen</h4>
+<p>
+    Mit <strong>„Klonen"</strong> in der Toolbar kannst du ein Remote-Repository
+    herunterladen. Gib die HTTPS-URL sowie einen lokalen Zielordner an. Für
+    private Repositories kannst du optional Benutzername und Passwort/Token eingeben —
+    diese werden sicher im macOS Keychain gespeichert, nie in einer Datei.
+</p>
+
 <h4>Ordner anlegen</h4>
 <p>
     Mit <strong>„Neuer Ordner"</strong> kannst du Repositories thematisch gruppieren
@@ -90,11 +98,25 @@
     verknüpfen.
 </div>
 
+<h4>Wo werden die Repositories gespeichert?</h4>
+<p>
+    Die App speichert ausschließlich <em>Verknüpfungen</em> auf bestehende
+    lokale Repositories — keine Kopien der Daten selbst. Die Liste der Verknüpfungen
+    liegt in:
+</p>
+<pre>
+~/Library/Application Support/Git-Client/bookmarks.json
+</pre>
+<p>
+    Passwörter und Tokens werden <strong>niemals</strong> in dieser Datei abgelegt,
+    sondern ausschließlich im macOS Keychain.
+</p>
+
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="graph">Commit-History &amp; Graph lesen</h2>
 
 <p>
-    Nach dem Öffnen eines Repositories siehst du die vollständige Commit-Historie
+    Nach dem Öffnen eines Repositories siehst du die Commit-Historie
     (<code>git log --all</code>) in umgekehrter chronologischer Reihenfolge — der
     neueste Commit steht oben.
 </p>
@@ -134,6 +156,20 @@
     Klicke auf eine Zeile, um den Commit auszuwählen. Im unteren Bereich erscheint
     automatisch der Diff dieses Commits.
 </p>
+
+<h3 id="lazyladen">Große Repositories: Lazy Loading</h3>
+<p>
+    Bei Repositories mit vielen Commits lädt die App zunächst nur die neuesten
+    <strong>2.000 Commits</strong> (Standardwert). Sobald du ans <strong>Ende der
+    Liste scrollst</strong>, werden automatisch weitere Commits nachgeladen — so
+    lange, bis die vollständige Historie angezeigt wird.
+</p>
+
+<div class="tip">
+    <strong>Tipp:</strong>
+    Die Anzahl der initial geladenen Commits lässt sich in den
+    <a href="#einstellungen">Einstellungen</a> (⌘,) anpassen.
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="navigation">Branches und Tags</h2>
@@ -186,6 +222,49 @@
     außerhalb der App (z.B. im Terminal) neue Commits erstellt, Branches angelegt
     oder Merges durchgeführt hast.
 </p>
+<p>
+    Beim Neu-laden wird die Commit-Liste von Anfang an neu aufgebaut — der
+    Lazy-Loading-Zähler wird zurückgesetzt und die erste Seite wird erneut geladen.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="einstellungen">Einstellungen</h2>
+
+<p>
+    Die Einstellungen öffnest du über das Menü <strong>Git-Client → Einstellungen…</strong>
+    oder mit der Tastenkombination <strong>⌘,</strong>.
+</p>
+
+<h3>Commit-Liste</h3>
+<table>
+    <tr><th>Einstellung</th><th>Bedeutung</th></tr>
+    <tr>
+        <td>Commits pro Ladevorgang</td>
+        <td>Wie viele Commits beim Öffnen eines Repositories (und bei jedem
+            Nachladen) geladen werden. Standardwert: <strong>2.000</strong>.
+            Mindestwert: 100. Ein kleinerer Wert beschleunigt den Start,
+            erfordert aber häufigeres Nachladen bei langen Historien.</td>
+    </tr>
+</table>
+
+<h4>Änderungen speichern</h4>
+<p>
+    Klicke auf <strong>Speichern</strong> (oder drücke <strong>⏎</strong>), um die
+    Einstellungen zu übernehmen und das Fenster zu schließen. Mit
+    <strong>Abbrechen</strong> (oder <strong>Esc</strong>) werden alle Änderungen
+    verworfen.
+</p>
+<p>
+    Wenn du das Einstellungsfenster über den roten Schließen-Button schließt und es
+    ungespeicherte Änderungen gibt, erscheint eine Warnung. Du kannst dann entweder
+    die Änderungen verwerfen oder zum Dialog zurückkehren.
+</p>
+
+<div class="note">
+    <strong>Hinweis:</strong>
+    Geänderte Einstellungen gelten ab dem nächsten Öffnen oder Neu-Laden eines
+    Repositories — laufende Ladevorgänge werden nicht unterbrochen.
+</div>
 
 <footer>
     <a href="index.html">← Zurück zur Übersicht</a> ·

@@ -313,12 +313,14 @@ struct MainWindowView: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(error)
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if vm.commits.isEmpty {
                 ContentUnavailableView(
                     "Keine Commits",
                     systemImage: "tray",
                     description: Text("Dieses Repository enthält noch keine Commits.")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 commitList(vm: vm)
             }
@@ -433,6 +435,7 @@ struct MainWindowView: View {
                 systemImage: "doc.text.magnifyingglass",
                 description: Text("Wähle einen Commit, um Details und Diff anzuzeigen.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

@@ -9,13 +9,20 @@ import Observation
 @Observable
 @MainActor
 final class AppModel {
-    private let store = BookmarkStore()
+    private let store: BookmarkStore
 
     var bookmarkNodes: [BookmarkNode] = []
     var openedRepository: RepositoryBookmark? = nil
     var repositoryViewModel: RepositoryViewModel? = nil
 
     init() {
+        self.store = BookmarkStore()
+        bookmarkNodes = store.load()
+    }
+
+    /// Nur für Tests: erlaubt das Injizieren eines benutzerdefinierten BookmarkStore.
+    init(store: BookmarkStore) {
+        self.store = store
         bookmarkNodes = store.load()
     }
 

@@ -1237,3 +1237,291 @@ struct RepositoryViewModelPagingTests {
         #expect(!vm.isLoadingMore)
     }
 }
+
+// MARK: - RepositoryViewModel Integration (load / loadMore)
+
+@Suite("RepositoryViewModel Integration")
+@MainActor
+struct RepositoryViewModelIntegrationTests {
+
+    let repoURL: URL
+    let bookmark: RepositoryBookmark
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vm-integration-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        for i in 1...3 {
+            let file = repoURL.appendingPathComponent("f\(i).txt")
+            try "x".write(to: file, atomically: true, encoding: .utf8)
+            try sh("git", "-C", repoURL.path, "add", ".")
+            try sh("git", "-C", repoURL.path, "commit", "-m", "Commit \(i)")
+        }
+        bookmark = RepositoryBookmark(name: "Test", path: repoURL)
+    }
+
+    @Test("load() füllt commits, branches, tags")
+    func loadFillsData() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        #expect(!vm.commits.isEmpty)
+        #expect(!vm.branches.isEmpty)
+        #expect(vm.isLoading == false)
+        #expect(vm.errorMessage == nil)
+    }
+
+    @Test("load() baut graphRows auf")
+    func loadBuildsGraph() async {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        #expect(vm.graphRows.count == vm.commits.count)
+    }
+
+    @Test("load() setzt canLoadMore=false für kleines Repo")
+    func loadSetsCanLoadMoreFalse() async {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        // 3 Commits < pageSize (min 100) → kein weiteres Laden
+        #expect(vm.canLoadMore == false)
+    }
+
+    @Test("loadMore() mit canLoadMore=true läuft ohne Fehler durch")
+    func loadMoreFullPath() async {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        // Manuell zurücksetzen, damit der Guard passiert
+        vm.canLoadMore = true
+        await vm.loadMore()
+        // Nächste Seite ist leer → canLoadMore wird false gesetzt
+        #expect(vm.canLoadMore == false)
+        #expect(vm.isLoadingMore == false)
+    }
+}
+
+// MARK: - KeychainStore
+
+@Suite("KeychainStore")
+struct KeychainStoreTests {
+
+    @Test("save und load liefern denselben Wert")
+    func saveAndLoad() {
+        let id = UUID()
+        defer { KeychainStore.delete(for: id) }
+        KeychainStore.save("test-secret", for: id)
+        #expect(KeychainStore.load(for: id) == "test-secret")
+    }
+
+    @Test("load ohne vorherigen save gibt nil")
+    func loadMissing() {
+        let id = UUID()
+        KeychainStore.delete(for: id)   // sicherstellen, dass nichts vorhanden
+        #expect(KeychainStore.load(for: id) == nil)
+    }
+
+    @Test("delete entfernt gespeicherten Wert")
+    func deleteRemovesValue() {
+        let id = UUID()
+        KeychainStore.save("secret", for: id)
+        KeychainStore.delete(for: id)
+        #expect(KeychainStore.load(for: id) == nil)
+    }
+
+    @Test("save überschreibt vorhandenen Eintrag")
+    func saveOverwrites() {
+        let id = UUID()
+        defer { KeychainStore.delete(for: id) }
+        KeychainStore.save("first", for: id)
+        KeychainStore.save("second", for: id)
+        #expect(KeychainStore.load(for: id) == "second")
+    }
+
+    @Test("Verschiedene IDs sind unabhängig")
+    func differentIDsAreIndependent() {
+        let id1 = UUID()
+        let id2 = UUID()
+        defer {
+            KeychainStore.delete(for: id1)
+            KeychainStore.delete(for: id2)
+        }
+        KeychainStore.save("only-for-id1", for: id1)
+        #expect(KeychainStore.load(for: id2) == nil)
+    }
+}
+
+// MARK: - AppModel
+
+@Suite("AppModel")
+@MainActor
+struct AppModelTests {
+
+    func makeModel() -> (AppModel, URL) {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appmodel-\(UUID().uuidString).json")
+        let store = BookmarkStore(fileURL: url)
+        return (AppModel(store: store), url)
+    }
+
+    @Test("addRepository fügt Knoten hinzu")
+    func addRepositoryAddsNode() {
+        let (model, _) = makeModel()
+        model.addRepository(name: "Repo", path: URL(fileURLWithPath: "/tmp/r"))
+        #expect(model.bookmarkNodes.count == 1)
+    }
+
+    @Test("addRepository persistiert Daten")
+    func addRepositoryPersists() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appmodel-persist-\(UUID().uuidString).json")
+        let store = BookmarkStore(fileURL: url)
+        let model = AppModel(store: store)
+        model.addRepository(name: "Repo", path: URL(fileURLWithPath: "/tmp/r"))
+        let model2 = AppModel(store: BookmarkStore(fileURL: url))
+        #expect(model2.bookmarkNodes.count == 1)
+    }
+
+    @Test("addFolder fügt Ordner hinzu")
+    func addFolderAddsFolder() {
+        let (model, _) = makeModel()
+        model.addFolder(name: "Ordner")
+        #expect(model.bookmarkNodes.count == 1)
+        #expect(model.bookmarkNodes[0].isFolder)
+    }
+
+    @Test("rename ändert den Namen")
+    func renameChangesName() {
+        let (model, _) = makeModel()
+        model.addRepository(name: "Alt", path: URL(fileURLWithPath: "/tmp/r"))
+        let id = model.bookmarkNodes[0].id
+        model.rename(id: id, to: "Neu")
+        #expect(model.bookmarkNodes[0].displayName == "Neu")
+    }
+
+    @Test("delete entfernt Knoten")
+    func deleteRemovesNode() {
+        let (model, _) = makeModel()
+        model.addRepository(name: "Repo", path: URL(fileURLWithPath: "/tmp/r"))
+        let id = model.bookmarkNodes[0].id
+        model.delete(id: id)
+        #expect(model.bookmarkNodes.isEmpty)
+    }
+
+    @Test("move verschiebt Repository in Ordner")
+    func moveToFolder() {
+        let (model, _) = makeModel()
+        model.addFolder(name: "Ordner")
+        model.addRepository(name: "Repo", path: URL(fileURLWithPath: "/tmp/r"))
+        let folderID = model.bookmarkNodes[0].id
+        let repoID = model.bookmarkNodes[1].id
+        model.move(id: repoID, toFolder: folderID)
+        #expect(model.bookmarkNodes.count == 1)           // nur noch Ordner auf Root-Ebene
+        #expect(model.bookmarkNodes[0].children?.count == 1)
+    }
+
+    @Test("updateRepositoryPath aktualisiert den Pfad")
+    func updatePathWorks() {
+        let (model, _) = makeModel()
+        model.addRepository(name: "Repo", path: URL(fileURLWithPath: "/tmp/alt"))
+        let id = model.bookmarkNodes[0].id
+        let newPath = URL(fileURLWithPath: "/tmp/neu")
+        model.updateRepositoryPath(id: id, newPath: newPath)
+        let found = model.bookmarkNodes.findRepository(id: id)
+        #expect(found?.path == newPath)
+    }
+
+    @Test("closeRepository setzt openedRepository und repositoryViewModel zurück")
+    func closeResetsState() {
+        let (model, _) = makeModel()
+        model.openedRepository = RepositoryBookmark(name: "R", path: URL(fileURLWithPath: "/tmp/r"))
+        model.closeRepository()
+        #expect(model.openedRepository == nil)
+        #expect(model.repositoryViewModel == nil)
+    }
+
+    @Test("openRepository setzt State wenn Pfad existiert")
+    func openRepositoryWithExistingPath() throws {
+        let (model, _) = makeModel()
+        // Temporäres Verzeichnis existiert sicher
+        let dir = FileManager.default.temporaryDirectory
+        let bm = RepositoryBookmark(name: "Test", path: dir)
+        model.openRepository(bm)
+        #expect(model.openedRepository?.id == bm.id)
+        #expect(model.repositoryViewModel != nil)
+    }
+
+    @Test("openRepository ignoriert nicht-existierenden Pfad")
+    func openRepositoryWithMissingPath() {
+        let (model, _) = makeModel()
+        let bm = RepositoryBookmark(
+            name: "Ghost",
+            path: URL(fileURLWithPath: "/tmp/path-that-does-not-exist-\(UUID().uuidString)")
+        )
+        model.openRepository(bm)
+        #expect(model.openedRepository == nil)
+    }
+}
+
+// MARK: - GitService aheadBehind (mit lokalem Upstream)
+
+@Suite("GitService aheadBehind")
+@MainActor
+struct GitServiceAheadBehindTests {
+
+    let localURL: URL
+
+    init() throws {
+        let base = FileManager.default.temporaryDirectory
+        let bareURL = base.appendingPathComponent("bare-\(UUID().uuidString).git", isDirectory: true)
+        localURL = base.appendingPathComponent("local-\(UUID().uuidString)", isDirectory: true)
+
+        // Bare-Repo als "Remote"
+        try sh("git", "init", "--bare", bareURL.path)
+
+        // Lokales Repo klonen (damit tracking-Branch konfiguriert ist)
+        try sh("git", "clone", bareURL.path, localURL.path)
+        try sh("git", "-C", localURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", localURL.path, "config", "user.name", "T")
+
+        // Ersten Commit pushen → Remote-Tracking-Branch existiert
+        let initFile = localURL.appendingPathComponent("init.txt")
+        try "x".write(to: initFile, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Init")
+        try sh("git", "-C", localURL.path, "push", "-u", "origin", "HEAD")
+
+        // Lokalen Commit erzeugen, der noch nicht gepusht ist (ahead: 1)
+        let aheadFile = localURL.appendingPathComponent("ahead.txt")
+        try "y".write(to: aheadFile, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Ahead commit")
+    }
+
+    @Test("aheadBehind liefert ahead=1, behind=0")
+    func aheadBehindAheadOne() async throws {
+        let svc = GitService(repositoryPath: localURL)
+        let counts = try await svc.aheadBehind()
+        #expect(counts != nil)
+        #expect(counts?.ahead == 1)
+        #expect(counts?.behind == 0)
+    }
+
+    @Test("aheadBehind gibt nil für Repo ohne Upstream zurück")
+    func aheadBehindNoUpstreamReturnsNil() async throws {
+        let noUpstreamURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("no-upstream-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: noUpstreamURL, withIntermediateDirectories: true)
+        try sh("git", "-C", noUpstreamURL.path, "init")
+        try sh("git", "-C", noUpstreamURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", noUpstreamURL.path, "config", "user.name", "T")
+        let f = noUpstreamURL.appendingPathComponent("f.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", noUpstreamURL.path, "add", ".")
+        try sh("git", "-C", noUpstreamURL.path, "commit", "-m", "Init")
+
+        let svc = GitService(repositoryPath: noUpstreamURL)
+        let counts = try await svc.aheadBehind()
+        #expect(counts == nil)
+    }
+}

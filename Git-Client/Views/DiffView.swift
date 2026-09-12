@@ -117,25 +117,30 @@ struct DiffView: View {
     }
 
     private func patchView(_ file: DiffFile) -> some View {
-        ScrollView([.vertical, .horizontal]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(file.hunks) { hunk in
-                    // Hunk-Header
-                    Text(hunk.header)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.08))
+        // GeometryReader misst die Breite des sichtbaren Panels (außerhalb der
+        // ScrollView). Jede Zeile bekommt minWidth: geo.size.width, damit Zeilen-
+        // Hintergründe die volle Panel-Breite füllen — auch wenn der Text kürzer ist.
+        // Längere Zeilen überschreiten geo.size.width und aktivieren den H-Scroll.
+        GeometryReader { geo in
+            ScrollView([.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(file.hunks) { hunk in
+                        Text(hunk.header)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .frame(minWidth: geo.size.width, alignment: .leading)
+                            .background(Color.secondary.opacity(0.08))
 
-                    ForEach(hunk.lines) { line in
-                        DiffLineView(line: line)
+                        ForEach(hunk.lines) { line in
+                            DiffLineView(line: line, minWidth: geo.size.width)
+                        }
                     }
                 }
             }
+            .background(Color(nsColor: .textBackgroundColor))
         }
-        .background(Color(nsColor: .textBackgroundColor))
     }
 }
 
@@ -143,23 +148,23 @@ struct DiffView: View {
 
 private struct DiffLineView: View {
     let line: DiffLine
+    var minWidth: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 0) {
-            // Marker (+/-/ )
             Text(marker)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(markerColor)
                 .frame(width: 14, alignment: .center)
 
-            // Zeileninhalt (ohne führendes +/-/ )
             Text(lineContent)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(textColor)
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.trailing, 8)
         }
+        .frame(minWidth: minWidth, alignment: .leading)
         .padding(.vertical, 1)
         .background(backgroundColor)
     }

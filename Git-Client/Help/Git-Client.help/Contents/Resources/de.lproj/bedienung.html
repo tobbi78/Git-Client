@@ -266,6 +266,53 @@
     Repositories — laufende Ladevorgänge werden nicht unterbrochen.
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="versionshistorie">Versionshistorie</h2>
+
+<h3 id="v1_1">Version 1.1</h3>
+
+<h4>Neu: Lazy Loading der Commit-Liste</h4>
+<p>
+    Große Repositories werden jetzt deutlich schneller geöffnet. Beim Start lädt die App
+    nur die neuesten <strong>2.000 Commits</strong> (Standardwert). Sobald du ans Ende
+    der Liste scrollst, werden automatisch weitere Commits nachgeladen — ohne manuellen
+    Eingriff.
+</p>
+
+<h4>Neu: Einstellungen (⌘,)</h4>
+<p>
+    Im neuen Einstellungsdialog lässt sich die Anzahl der Commits pro Ladevorgang
+    anpassen. Änderungen werden erst mit <strong>Speichern</strong> übernommen.
+    Beim Schließen des Fensters mit ungespeicherten Änderungen erscheint eine
+    Warnung.
+</p>
+
+<h4>Neu: Repository klonen</h4>
+<p>
+    Repositories können jetzt direkt aus der App heraus über eine HTTPS-URL geklont
+    werden. Zugangsdaten (Benutzername und Passwort/Token) werden sicher im
+    macOS Keychain gespeichert — nie in einer Datei.
+</p>
+
+<h4>Fehlerbehebungen</h4>
+<ul>
+    <li>Commit-Graph ohne Lücken zwischen den Zeilen.</li>
+    <li>Diff-Panel füllt jetzt die volle Breite rechts der Seitenleiste aus.</li>
+    <li>Beim Öffnen eines Repositories wird eine sinnvolle Fenster-Mindestbreite gesetzt.</li>
+</ul>
+
+<h4>Dokumentation</h4>
+<p>
+    Die Hilfe wurde um Speicherpfade, Lazy Loading, Einstellungen und das
+    Sicherheitskonzept (Keychain) erweitert.
+</p>
+
+<h3 id="v1_0">Version 1.0</h3>
+<p>
+    Erste Veröffentlichung. Enthält: Bookmark-Browser, Commit-Graph, Diff-Ansicht,
+    Branch- und Tag-Navigation, Drag &amp; Drop zum Sortieren.
+</p>
+
 <footer>
     <a href="index.html">← Zurück zur Übersicht</a> ·
     <a href="technik.html">Teil B — Technische Implementierung →</a>

@@ -199,6 +199,7 @@ struct MainWindowView: View {
             }
             commitHistory
         }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -311,9 +312,10 @@ struct MainWindowView: View {
         }
     }
 
-    private static let rowHeight: CGFloat = 48
-    // Abstand zwischen Commit-Zeilen (Luft zwischen den Einträgen)
-    private static let rowSpacing: CGFloat = 6
+    // Höhere Zeilen geben Luft zwischen Commits; spacing: 0 hält die
+    // Graph-Linien lückenlos verbunden (kein Gap zwischen Zeilen).
+    private static let rowHeight: CGFloat = 56
+    private static let rowSpacing: CGFloat = 0
 
     private func commitList(vm: RepositoryViewModel) -> some View {
         ScrollViewReader { proxy in
@@ -363,6 +365,7 @@ struct MainWindowView: View {
             // Scroll wird am Token ausgelöst, nicht an der ID — dadurch funktioniert
             // der Sprung auch wenn der Commit bereits ausgewählt war (z.B. origin/main
             // zeigt auf denselben Commit wie main, kein ID-Wechsel nötig).
+            .frame(maxWidth: .infinity)
             .onChange(of: vm.scrollRequestToken) { _, _ in
                 if let id = vm.scrollTargetID {
                     withAnimation(.easeInOut(duration: 0.25)) {

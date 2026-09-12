@@ -52,9 +52,6 @@ struct MainWindowView: View {
             // sofort breit genug ist — unabhängig davon ob ein Commit ausgewählt ist.
             .frame(minWidth: 640, maxWidth: .infinity)
         }
-        // Fenster-Mindestbreite: verhindert, dass das Fenster in der schmalen
-        // Größe von RepositoryBrowserView bleibt, wenn ein Repository geöffnet wird.
-        .frame(minWidth: 900, minHeight: 600)
         .navigationTitle(repository.name)
         .navigationSubtitle(subtitleText)
         .toolbar {
@@ -70,6 +67,22 @@ struct MainWindowView: View {
                 }
                 .disabled(vm?.isLoading ?? true)
                 .help("Commits, Branches und Tags neu laden")
+            }
+        }
+        // Fenster beim Öffnen eines Repositories auf Mindestgröße bringen.
+        // .frame(minWidth:) auf einem nicht-root-View erzwingt keine Fenster-Vergrößerung;
+        // daher direkter NSWindow-Zugriff per keyWindow.
+        .onAppear {
+            DispatchQueue.main.async {
+                guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+                let minW: CGFloat = 900
+                let minH: CGFloat = 600
+                if window.frame.size.width < minW || window.frame.size.height < minH {
+                    window.setContentSize(CGSize(
+                        width:  max(minW, window.frame.size.width),
+                        height: max(minH, window.frame.size.height)
+                    ))
+                }
             }
         }
     }

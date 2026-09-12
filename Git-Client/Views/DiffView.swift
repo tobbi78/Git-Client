@@ -38,6 +38,7 @@ struct DiffView: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Commit-Header

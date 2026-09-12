@@ -27,6 +27,8 @@
     <string>AppIcon</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Tobias Florian. Alle Rechte vorbehalten.</string>
     <!-- Apple Help Book -->
     <key>CFBundleHelpBookFolder</key>
     <string>Git-Client.help</string>

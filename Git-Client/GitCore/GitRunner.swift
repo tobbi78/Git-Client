@@ -39,6 +39,13 @@ actor GitRunner {
                 process.currentDirectoryURL = workingDirectory
             }
 
+            // Verhindert, dass git bei fehlenden Credentials interaktiv nach einem
+            // Passwort fragt (würde den Prozess hängen lassen). Für eine GUI-App immer
+            // sinnvoll; ohne diesen Schutz würde ls-remote/fetch an einem Prompt hängen.
+            var env = ProcessInfo.processInfo.environment
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            process.environment = env
+
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe

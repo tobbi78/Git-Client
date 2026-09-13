@@ -2037,3 +2037,166 @@ struct BlameParserTests {
         #expect(lines.isEmpty)
     }
 }
+
+// MARK: - RepoRefSnapshotTests
+
+@Suite("RepoRefSnapshot — Parser und Diff")
+struct RepoRefSnapshotTests {
+
+    // MARK: - parseForEachRef
+
+    @Test("parseForEachRef: mehrere Zeilen → korrektes Dictionary")
+    func parseForEachRefBasic() {
+        // SHAs sind exakt 40 Hex-Zeichen
+        let shaMain    = "aabbccddeeff00112233445566778899aabbccdd"
+        let shaFeature = "1122334455667788990011223344556677889900"
+        let shaRemote  = "fedcba9876543210fedcba9876543210fedcba98"
+        let output = """
+        \(shaMain) refs/heads/main
+        \(shaFeature) refs/heads/feature/x
+        \(shaRemote) refs/remotes/origin/main
+        """
+        let result = RepoRefSnapshot.parseForEachRef(output)
+        #expect(result["refs/heads/main"] == shaMain)
+        #expect(result["refs/heads/feature/x"] == shaFeature)
+        #expect(result["refs/remotes/origin/main"] == shaRemote)
+        #expect(result.count == 3)
+    }
+
+    @Test("parseForEachRef: leere Eingabe → leeres Dictionary")
+    func parseForEachRefEmpty() {
+        let result = RepoRefSnapshot.parseForEachRef("")
+        #expect(result.isEmpty)
+    }
+
+    @Test("parseForEachRef: ungültig kurze SHAs werden verworfen")
+    func parseForEachRefShortSha() {
+        let output = "abc123 refs/heads/main\n"  // SHA kürzer als 40
+        let result = RepoRefSnapshot.parseForEachRef(output)
+        #expect(result.isEmpty)
+    }
+
+    // MARK: - parseLsRemote
+
+    @Test("parseLsRemote: normale Ausgabe → korrektes Dictionary")
+    func parseLsRemoteBasic() {
+        let shaMain    = "aabbccddeeff00112233445566778899aabbccdd"
+        let shaDevelop = "1122334455667788990011223344556677889900"
+        let output = "\(shaMain)\trefs/heads/main\n\(shaDevelop)\trefs/heads/develop"
+        let result = RepoRefSnapshot.parseLsRemote(output)
+        #expect(result["refs/heads/main"] == shaMain)
+        #expect(result["refs/heads/develop"] == shaDevelop)
+        #expect(result.count == 2)
+    }
+
+    @Test("parseLsRemote: Peeled-Zeilen (^{}) werden verworfen")
+    func parseLsRemotePeeledLines() {
+        // Annotierte Tags erzeugen ^{}-Zeilen — bei ls-remote --heads nicht erwartet,
+        // aber defensiv abgesichert.
+        let shaMain = "aabbccddeeff00112233445566778899aabbccdd"
+        let shaTag  = "1122334455667788990011223344556677889900"
+        let shaPeel = "fedcba9876543210fedcba9876543210fedcba98"
+        let output = "\(shaMain)\trefs/heads/main\n\(shaTag)\trefs/tags/v1.0\n\(shaPeel)\trefs/tags/v1.0^{}"
+        let result = RepoRefSnapshot.parseLsRemote(output)
+        #expect(result.keys.contains("refs/tags/v1.0^{}") == false)
+        // Die anderen zwei bleiben
+        #expect(result.count == 2)
+    }
+
+    @Test("parseLsRemote: leere Eingabe → leeres Dictionary")
+    func parseLsRemoteEmpty() {
+        let result = RepoRefSnapshot.parseLsRemote("")
+        #expect(result.isEmpty)
+    }
+
+    // MARK: - remoteAhead
+
+    @Test("remoteAhead: Server-SHA weicht ab → wird gezählt")
+    func remoteAheadDifferentSha() {
+        let localSha  = "aabbccddeeff00112233445566778899aabbccdd"
+        let remoteSha = "1122334455667788990011223344556677889900"
+        let local  = ["refs/remotes/origin/main": localSha]
+        let remote = ["refs/heads/main": remoteSha]
+        let count = RepoRefSnapshot.remoteAhead(
+            localSignature: local,
+            remoteHeads: remote,
+            remoteName: "origin"
+        )
+        #expect(count == 1)
+    }
+
+    @Test("remoteAhead: SHAs identisch → 0")
+    func remoteAheadSameSha() {
+        let sha = "aabbccddeeff00112233445566778899aabbccdd"
+        let local  = ["refs/remotes/origin/main": sha]
+        let remote = ["refs/heads/main": sha]
+        let count = RepoRefSnapshot.remoteAhead(
+            localSignature: local,
+            remoteHeads: remote,
+            remoteName: "origin"
+        )
+        #expect(count == 0)
+    }
+
+    @Test("remoteAhead: lokales Remote-Tracking-Ref fehlt → wird gezählt")
+    func remoteAheadMissingLocalRef() {
+        // Kein lokales refs/remotes/origin/newbranch → wird als „neu" gezählt
+        let local: [String: String] = [:]
+        let remote = ["refs/heads/newbranch": "fedcba9876543210fedcba9876543210fedcba98"]
+        let count = RepoRefSnapshot.remoteAhead(
+            localSignature: local,
+            remoteHeads: remote,
+            remoteName: "origin"
+        )
+        #expect(count == 1)
+    }
+
+    @Test("remoteAhead: leere Eingaben → 0")
+    func remoteAheadEmptyInputs() {
+        #expect(RepoRefSnapshot.remoteAhead(localSignature: [:], remoteHeads: [:], remoteName: "origin") == 0)
+        #expect(RepoRefSnapshot.remoteAhead(localSignature: [:], remoteHeads: [:], remoteName: "") == 0)
+    }
+
+    @Test("remoteAhead: mehrere Branches, teils gleich, teils abweichend")
+    func remoteAheadMixed() {
+        let sha1    = "aabbccddeeff00112233445566778899aabbccdd"
+        let sha2    = "1122334455667788990011223344556677889900"
+        let sha2new = "fedcba9876543210fedcba9876543210fedcba98"
+        let local: [String: String] = [
+            "refs/remotes/origin/main": sha1,
+            "refs/remotes/origin/develop": sha2
+        ]
+        let remote: [String: String] = [
+            "refs/heads/main": sha1,       // identisch → nicht gezählt
+            "refs/heads/develop": sha2new  // abweichend → gezählt
+        ]
+        let count = RepoRefSnapshot.remoteAhead(
+            localSignature: local,
+            remoteHeads: remote,
+            remoteName: "origin"
+        )
+        #expect(count == 1)
+    }
+
+    // MARK: - RepoNewCommits.hasNews
+
+    @Test("RepoNewCommits.hasNews: false wenn beides 0/false")
+    func hasNewsNone() {
+        let status = RepoNewCommits()
+        #expect(status.hasNews == false)
+    }
+
+    @Test("RepoNewCommits.hasNews: true bei lokalem Change")
+    func hasNewsLocal() {
+        var status = RepoNewCommits()
+        status.hasLocalChanges = true
+        #expect(status.hasNews == true)
+    }
+
+    @Test("RepoNewCommits.hasNews: true bei Remote-Ahead")
+    func hasNewsRemote() {
+        var status = RepoNewCommits()
+        status.remoteAheadBranches = 2
+        #expect(status.hasNews == true)
+    }
+}

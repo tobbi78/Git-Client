@@ -219,6 +219,11 @@ struct MainWindowView: View {
     @ViewBuilder
     private var commitPane: some View {
         VStack(spacing: 0) {
+            // Auto-Refresh-Banner: erscheint wenn neue Commits erkannt wurden
+            if let news = appModel.newCommitStatus[repository.id], news.hasNews {
+                autoRefreshBanner(news: news)
+                Divider()
+            }
             if let vm {
                 syncBar(vm: vm)
                 Divider()
@@ -231,6 +236,47 @@ struct MainWindowView: View {
             commitHistory
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func autoRefreshBanner(news: RepoNewCommits) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .foregroundStyle(Color.accentColor)
+                .font(.callout)
+
+            let detail: String = {
+                var parts: [String] = []
+                if news.hasLocalChanges { parts.append("Neue lokale Commits") }
+                if news.remoteAheadBranches > 0 {
+                    let label = news.remoteAheadBranches == 1
+                        ? "1 Branch auf dem Server voraus"
+                        : "\(news.remoteAheadBranches) Branches auf dem Server voraus"
+                    parts.append(label)
+                }
+                return parts.joined(separator: " · ")
+            }()
+
+            Text(detail.isEmpty ? "Neue Commits vorhanden" : detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button("Aktualisieren") {
+                Task {
+                    await vm?.load()
+                    await appModel.markRepositorySeen(repository.id)
+                }
+            }
+            .controlSize(.small)
+            .disabled(vm?.isLoading ?? true)
+            .help("Commit-Liste lokal neu laden (kein Download)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.accentColor.opacity(0.07))
     }
 
     @ViewBuilder

@@ -599,8 +599,25 @@ struct MainWindowView: View {
             DiffView(
                 commit: commit,
                 diff: vm?.currentDiff,
-                isLoading: vm?.isDiffLoading ?? false
+                isLoading: vm?.isDiffLoading ?? false,
+                onBlameRequest: { path in vm?.requestBlame(path: path) }
             )
+            .sheet(isPresented: Binding(
+                get: { vm?.showBlameSheet ?? false },
+                set: { vm?.showBlameSheet = $0 }
+            )) {
+                BlameView(
+                    filePath: vm?.blameFilePath,
+                    commitShortSha: vm?.selectedCommit?.shortSha,
+                    lines: vm?.blameLines ?? [],
+                    isLoading: vm?.isBlameLoading ?? false,
+                    error: vm?.blameError,
+                    onSelectCommit: { sha in
+                        vm?.selectCommit(bySha: sha)
+                        vm?.showBlameSheet = false
+                    }
+                )
+            }
         } else {
             ContentUnavailableView(
                 "Kein Commit ausgewählt",

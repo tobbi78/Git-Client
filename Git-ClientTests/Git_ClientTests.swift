@@ -1947,3 +1947,93 @@ struct JiraSettingsTests {
         #expect(decoded.isEmpty)
     }
 }
+
+// MARK: - BlameParserTests
+
+@Suite("BlameParserTests")
+struct BlameParserTests {
+
+    // Minimal-Porcelain-Ausgabe: 2 Commits, 3 Zeilen.
+    // sha1: 2 Zeilen (zweite ohne neuen Meta-Block → Cache-Test)
+    // sha2: 1 Zeile
+    private var sampleOutput: String {
+        """
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1 1 2
+        author Alice
+        author-time 1000000000
+        summary fix: crash on startup
+        \tlet x = 1
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2 2
+        \tlet y = 2
+        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 3 3 1
+        author Bob
+        author-time 1100000000
+        summary feat: add feature
+        \treturn x + y
+        """
+    }
+
+    @Test("Korrekte Anzahl Zeilen")
+    func lineCount() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines.count == 3)
+    }
+
+    @Test("SHA und shortSha korrekt")
+    func shaAndShortSha() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines[0].sha == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        #expect(lines[0].shortSha == "aaaaaaaa")
+        #expect(lines[2].sha == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        #expect(lines[2].shortSha == "bbbbbbbb")
+    }
+
+    @Test("Autor korrekt geparst")
+    func author() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines[0].author == "Alice")
+        #expect(lines[2].author == "Bob")
+    }
+
+    @Test("Datum aus author-time (Epoch) korrekt")
+    func date() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines[0].date == Date(timeIntervalSince1970: 1_000_000_000))
+        #expect(lines[2].date == Date(timeIntervalSince1970: 1_100_000_000))
+    }
+
+    @Test("Summary korrekt")
+    func summary() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines[0].summary == "fix: crash on startup")
+        #expect(lines[2].summary == "feat: add feature")
+    }
+
+    @Test("Inhalt ohne führendes Tab")
+    func content() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines[0].content == "let x = 1")
+        #expect(lines[1].content == "let y = 2")
+        #expect(lines[2].content == "return x + y")
+    }
+
+    @Test("Zeilennummern fortlaufend")
+    func lineNumbers() {
+        let lines = BlameParser.parse(sampleOutput)
+        #expect(lines.map(\.lineNumber) == [1, 2, 3])
+    }
+
+    @Test("Cache: zweite Zeile desselben Commits erbt Metadaten")
+    func cacheInheritance() {
+        let lines = BlameParser.parse(sampleOutput)
+        // Zeile 2 gehört zu sha1 (kein neuer Meta-Block), muss dennoch Autor haben
+        #expect(lines[1].author == "Alice")
+        #expect(lines[1].summary == "fix: crash on startup")
+    }
+
+    @Test("Leere Eingabe → leeres Ergebnis")
+    func emptyInput() {
+        let lines = BlameParser.parse("")
+        #expect(lines.isEmpty)
+    }
+}

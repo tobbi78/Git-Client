@@ -72,6 +72,13 @@ final class RepositoryViewModel {
     var currentDiff: CommitDiff? = nil
     var isDiffLoading = false
 
+    // MARK: - Blame
+    var showBlameSheet = false
+    var blameFilePath: String? = nil
+    private(set) var blameLines: [BlameLine] = []
+    var isBlameLoading = false
+    var blameError: String? = nil
+
     // Expliziter Scroll-Trigger: erhöht sich bei jedem Branch-/Tag-Klick,
     // auch wenn der Commit bereits ausgewählt war (gleiche ID).
     private(set) var scrollRequestToken = 0
@@ -314,5 +321,29 @@ final class RepositoryViewModel {
             // Diff-Fehler still ignorieren — Commit bleibt auswählbar
         }
         isDiffLoading = false
+    }
+
+    // MARK: - Blame
+
+    /// Öffnet das Blame-Sheet für `path` im aktuell ausgewählten Commit.
+    func requestBlame(path: String) {
+        guard selectedCommitID != nil else { return }
+        blameFilePath = path
+        blameLines = []
+        blameError = nil
+        showBlameSheet = true
+        Task { await loadBlame() }
+    }
+
+    private func loadBlame() async {
+        guard let path = blameFilePath,
+              let sha = selectedCommitID else { return }
+        isBlameLoading = true
+        defer { isBlameLoading = false }
+        do {
+            blameLines = try await service.blame(path: path, sha: sha)
+        } catch {
+            blameError = error.localizedDescription
+        }
     }
 }

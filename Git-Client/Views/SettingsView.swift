@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var selectedProjectID: UUID? = nil
     @State private var draftAutoRefreshEnabled: Bool = true
     @State private var draftPollIntervalText: String = ""
+    @State private var draftShowLineNumbers: Bool = true
 
     // MARK: UI-Hilfszustand
     @State private var showMinWarning = false
@@ -53,6 +54,7 @@ struct SettingsView: View {
         || draftProjects != AppSettings.jiraProjects
         || draftAutoRefreshEnabled != AppSettings.autoRefreshEnabled
         || parsedPollInterval != AppSettings.remotePollInterval
+        || draftShowLineNumbers != AppSettings.showDiffLineNumbers
     }
 
     // MARK: - Body
@@ -68,6 +70,11 @@ struct SettingsView: View {
                 commitsTab
                     .tabItem {
                         Label("Commits", systemImage: "list.bullet")
+                    }
+
+                displayTab
+                    .tabItem {
+                        Label("Anzeige", systemImage: "text.alignleft")
                     }
 
                 autoRefreshTab
@@ -247,6 +254,23 @@ struct SettingsView: View {
         .padding(.bottom, 4)
     }
 
+    // MARK: - Reiter: Anzeige
+
+    private var displayTab: some View {
+        Form {
+            Section {
+                Toggle("Zeilennummern im Diff anzeigen", isOn: $draftShowLineNumbers)
+                Text("Zeigt links neben jeder Patch-Zeile die Original- (alt) und neue Zeilennummer an. Entspricht der Ansicht in Sourcetree oder GitHub.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Diff-Patch")
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.bottom, 4)
+    }
+
     // MARK: - Reiter: Aktualisierung
 
     private var autoRefreshTab: some View {
@@ -296,6 +320,7 @@ struct SettingsView: View {
         draftProjects  = AppSettings.jiraProjects
         draftAutoRefreshEnabled = AppSettings.autoRefreshEnabled
         draftPollIntervalText   = "\(AppSettings.remotePollInterval)"
+        draftShowLineNumbers    = AppSettings.showDiffLineNumbers
     }
 
     private func saveAndClose() {
@@ -333,6 +358,9 @@ struct SettingsView: View {
             }
             AppSettings.setRemotePollInterval(clampedInterval)
         }
+
+        // Anzeige
+        AppSettings.setShowDiffLineNumbers(draftShowLineNumbers)
 
         syncDraftFromSettings()
         dismiss()

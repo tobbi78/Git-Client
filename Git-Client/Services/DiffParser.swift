@@ -41,6 +41,12 @@ enum DiffParser {
                     let hunkHeader = l
                     var hunkLines: [DiffLine] = []
                     var lineIndex = 0
+
+                    // Startzeilennummern aus dem Hunk-Header ermitteln
+                    let startNums = parseHunkHeader(hunkHeader)
+                    var oldNo = startNums?.oldStart ?? 0
+                    var newNo = startNums?.newStart ?? 0
+                    let hasNumbers = startNums != nil
                     i += 1
 
                     while i < lines.count {
@@ -48,17 +54,40 @@ enum DiffParser {
                         if hl.hasPrefix("diff --git ") || hl.hasPrefix("@@ ") {
                             break
                         }
+
+                        // „\ No newline at end of file" — Hinweiszeile, keine Nummer, kein Increment
+                        if hl.hasPrefix("\\") {
+                            hunkLines.append(DiffLine(id: lineIndex, type: .context, content: hl,
+                                                      oldLineNumber: nil, newLineNumber: nil))
+                            lineIndex += 1
+                            i += 1
+                            continue
+                        }
+
                         let type: DiffLineType
+                        let oldNum: Int?
+                        let newNum: Int?
                         if hl.hasPrefix("+") {
                             type = .addition
                             addedLines += 1
+                            oldNum = nil
+                            newNum = hasNumbers ? newNo : nil
+                            newNo += 1
                         } else if hl.hasPrefix("-") {
                             type = .deletion
                             deletedLines += 1
+                            oldNum = hasNumbers ? oldNo : nil
+                            newNum = nil
+                            oldNo += 1
                         } else {
                             type = .context
+                            oldNum = hasNumbers ? oldNo : nil
+                            newNum = hasNumbers ? newNo : nil
+                            oldNo += 1
+                            newNo += 1
                         }
-                        hunkLines.append(DiffLine(id: lineIndex, type: type, content: hl))
+                        hunkLines.append(DiffLine(id: lineIndex, type: type, content: hl,
+                                                  oldLineNumber: oldNum, newLineNumber: newNum))
                         lineIndex += 1
                         i += 1
                     }
@@ -95,5 +124,35 @@ enum DiffParser {
             s = String(s.dropFirst(2))
         }
         return s
+    }
+
+    /// Liest die Startzeilennummern aus einem Hunk-Header.
+    ///
+    /// Erwartet das Format `@@ -<oldStart>[,<oldCount>] +<newStart>[,<newCount>] @@[ context]`.
+    /// Gibt `nil` zurück, wenn der Header nicht dem erwarteten Format entspricht.
+    ///
+    /// Beispiele:
+    /// - `"@@ -10,7 +12,9 @@"`  → `(oldStart: 10, newStart: 12)`
+    /// - `"@@ -1 +1 @@"`        → `(oldStart: 1, newStart: 1)`
+    /// - `"@@ -0,0 +1 @@"`      → `(oldStart: 0, newStart: 1)`
+    nonisolated static func parseHunkHeader(_ header: String) -> (oldStart: Int, newStart: Int)? {
+        // Format: "@@ -<old>[,<n>] +<new>[,<m>] @@"
+        guard header.hasPrefix("@@ ") else { return nil }
+
+        // Erste Zahl nach "-"
+        guard let minusRange = header.range(of: "-"),
+              let plusRange  = header.range(of: "+", range: minusRange.upperBound..<header.endIndex)
+        else { return nil }
+
+        let oldPart = header[minusRange.upperBound...]
+            .prefix(while: { $0.isNumber || $0 == "," })
+        let newPart = header[plusRange.upperBound...]
+            .prefix(while: { $0.isNumber || $0 == "," })
+
+        guard let oldStart = Int(oldPart.prefix(while: { $0.isNumber })),
+              let newStart = Int(newPart.prefix(while: { $0.isNumber }))
+        else { return nil }
+
+        return (oldStart: oldStart, newStart: newStart)
     }
 }

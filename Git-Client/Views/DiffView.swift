@@ -21,6 +21,9 @@ struct DiffView: View {
     // JIRA-Konfiguration — reagiert automatisch auf Einstellungsänderungen
     @AppStorage(AppSettings.jiraBaseURLKey) private var jiraBaseURL: String = ""
 
+    // Zeilennummern-Anzeige — reagiert automatisch auf Einstellungsänderungen
+    @AppStorage(AppSettings.showDiffLineNumbersKey) private var showLineNumbers: Bool = true
+
     /// Ticket-Matches für den aktuell angezeigten Commit.
     private var jiraTickets: [JiraTicketMatch] {
         JiraLinker.tickets(
@@ -209,7 +212,13 @@ struct DiffView: View {
         // ScrollView). Jede Zeile bekommt minWidth: geo.size.width, damit Zeilen-
         // Hintergründe die volle Panel-Breite füllen — auch wenn der Text kürzer ist.
         // Längere Zeilen überschreiten geo.size.width und aktivieren den H-Scroll.
-        GeometryReader { geo in
+        //
+        // numberColumnWidth: Breite einer Zeilennummernspalte — basiert auf der
+        // Ziffernanzahl der höchsten Zeilennummer plus etwas Padding.
+        let digitCount = max(2, String(file.maxLineNumber).count)
+        let numberColumnWidth = CGFloat(digitCount) * 8.0 + 6.0
+
+        return GeometryReader { geo in
             ScrollView([.vertical, .horizontal]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(file.hunks) { hunk in
@@ -222,7 +231,12 @@ struct DiffView: View {
                             .background(Color.secondary.opacity(0.08))
 
                         ForEach(hunk.lines) { line in
-                            DiffLineView(line: line, minWidth: geo.size.width)
+                            DiffLineView(
+                                line: line,
+                                minWidth: geo.size.width,
+                                showLineNumbers: showLineNumbers,
+                                numberColumnWidth: numberColumnWidth
+                            )
                         }
                     }
                 }
@@ -237,9 +251,28 @@ struct DiffView: View {
 private struct DiffLineView: View {
     let line: DiffLine
     var minWidth: CGFloat = 0
+    var showLineNumbers: Bool = true
+    var numberColumnWidth: CGFloat = 30
 
     var body: some View {
         HStack(spacing: 0) {
+            // Zeilennummern-Rinne (nur wenn aktiviert)
+            if showLineNumbers {
+                // Alte Zeilennummer (leer bei Additionen)
+                Text(line.oldLineNumber.map(String.init) ?? "")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .frame(width: numberColumnWidth, alignment: .trailing)
+                    .padding(.trailing, 2)
+
+                // Neue Zeilennummer (leer bei Deletionen)
+                Text(line.newLineNumber.map(String.init) ?? "")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                    .frame(width: numberColumnWidth, alignment: .trailing)
+                    .padding(.trailing, 6)
+            }
+
             Text(marker)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(markerColor)

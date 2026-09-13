@@ -108,4 +108,24 @@ enum AppSettings {
     static func setRemotePollInterval(_ seconds: Int) {
         UserDefaults.standard.set(seconds, forKey: remotePollIntervalKey)
     }
+
+    // MARK: - Anzeige
+
+    /// UserDefaults-Schlüssel: Zeilennummern im Diff anzeigen.
+    static let showDiffLineNumbersKey = "showDiffLineNumbers"
+
+    /// Standardwert: Zeilennummern sind eingeblendet.
+    static let defaultShowDiffLineNumbers = true
+
+    /// Gibt zurück, ob Zeilennummern im Diff-Patch angezeigt werden sollen.
+    static var showDiffLineNumbers: Bool {
+        if UserDefaults.standard.object(forKey: showDiffLineNumbersKey) == nil {
+            return defaultShowDiffLineNumbers
+        }
+        return UserDefaults.standard.bool(forKey: showDiffLineNumbersKey)
+    }
+
+    static func setShowDiffLineNumbers(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: showDiffLineNumbersKey)
+    }
 }

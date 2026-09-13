@@ -326,4 +326,16 @@ actor GitService {
         )
         return DiffParser.parse(output, sha: sha)
     }
+
+    // MARK: - Blame
+
+    /// Gibt die zeilenweise Autorschaft der Datei `path` im Zustand des Commits `sha` zurück.
+    /// Verwendet `git blame --porcelain`, das maschinenlesbare Metadaten pro Zeile liefert.
+    func blame(path: String, sha: String) async throws -> [BlameLine] {
+        let output = try await runner.runOrThrow(
+            ["blame", "--porcelain", sha, "--", path],
+            workingDirectory: repositoryPath
+        )
+        return BlameParser.parse(output)
+    }
 }

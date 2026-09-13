@@ -15,6 +15,18 @@ struct DiffView: View {
 
     @State private var selectedFileID: Int? = nil
 
+    // JIRA-Konfiguration — reagiert automatisch auf Einstellungsänderungen
+    @AppStorage(AppSettings.jiraBaseURLKey) private var jiraBaseURL: String = ""
+
+    /// Ticket-Matches für den aktuell angezeigten Commit.
+    private var jiraTickets: [JiraTicketMatch] {
+        JiraLinker.tickets(
+            in: commit.subject + "\n" + commit.body,
+            projects: AppSettings.jiraProjects,
+            baseURL: jiraBaseURL
+        )
+    }
+
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .long
@@ -63,6 +75,25 @@ struct DiffView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
+            // JIRA-Ticket-Links (nur wenn Treffer vorhanden)
+            if !jiraTickets.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(jiraTickets) { ticket in
+                        Link(destination: ticket.url) {
+                            Label(ticket.key, systemImage: "link")
+                                .font(.system(size: 11, weight: .medium))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.accentColor.opacity(0.12))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help(ticket.projectDescription.isEmpty ? ticket.key : ticket.projectDescription)
+                    }
+                }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

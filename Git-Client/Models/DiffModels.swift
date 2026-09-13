@@ -13,9 +13,13 @@ enum DiffLineType: Sendable {
 }
 
 struct DiffLine: Identifiable, Sendable {
-    let id: Int  // Zeilennummer im Hunk
+    let id: Int  // Index im Hunk
     let type: DiffLineType
     let content: String
+    /// Originale Zeilennummer (nil bei Additionen und „\ No newline"-Hinweiszeilen).
+    let oldLineNumber: Int?
+    /// Neue Zeilennummer (nil bei Deletionen und „\ No newline"-Hinweiszeilen).
+    let newLineNumber: Int?
 }
 
 struct DiffHunk: Identifiable, Sendable {
@@ -49,6 +53,15 @@ struct DiffFile: Identifiable, Sendable {
         if isDeleted { return .deleted }
         if oldPath != newPath { return .renamed }
         return .modified
+    }
+
+    /// Höchste vorhandene Zeilennummer im Patch (alt oder neu).
+    /// Wird von der View verwendet, um die Spaltenbreite der Zeilennummernspalten zu berechnen.
+    var maxLineNumber: Int {
+        hunks.flatMap(\.lines)
+             .flatMap { [$0.oldLineNumber, $0.newLineNumber] }
+             .compactMap { $0 }
+             .max() ?? 0
     }
 }
 

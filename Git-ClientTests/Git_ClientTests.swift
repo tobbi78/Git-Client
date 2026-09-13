@@ -2200,3 +2200,149 @@ struct RepoRefSnapshotTests {
         #expect(status.hasNews == true)
     }
 }
+
+// MARK: - DiffParser — Zeilennummern
+
+@Suite("DiffParser — Zeilennummern")
+struct DiffParserLineNumberTests {
+
+    // MARK: parseHunkHeader
+
+    @Test("Vollständiger Header @@ -10,7 +12,9 @@")
+    func parseFullHeader() {
+        let result = DiffParser.parseHunkHeader("@@ -10,7 +12,9 @@")
+        #expect(result?.oldStart == 10)
+        #expect(result?.newStart == 12)
+    }
+
+    @Test("Header ohne Count @@ -1 +1 @@")
+    func parseHeaderNoCount() {
+        let result = DiffParser.parseHunkHeader("@@ -1 +1 @@")
+        #expect(result?.oldStart == 1)
+        #expect(result?.newStart == 1)
+    }
+
+    @Test("Header mit Null-Zeilen @@ -0,0 +1 @@")
+    func parseHeaderZeroOld() {
+        let result = DiffParser.parseHunkHeader("@@ -0,0 +1 @@")
+        #expect(result?.oldStart == 0)
+        #expect(result?.newStart == 1)
+    }
+
+    @Test("Header mit nachfolgendem Kontext-Text")
+    func parseHeaderWithContext() {
+        let result = DiffParser.parseHunkHeader("@@ -55,6 +55,7 @@ func myFunc() {")
+        #expect(result?.oldStart == 55)
+        #expect(result?.newStart == 55)
+    }
+
+    @Test("Ungültiger Header gibt nil zurück")
+    func parseInvalidHeader() {
+        #expect(DiffParser.parseHunkHeader("not a header") == nil)
+        #expect(DiffParser.parseHunkHeader("") == nil)
+        #expect(DiffParser.parseHunkHeader("@@ no numbers @@") == nil)
+    }
+
+    // MARK: parse — Nummern-Zuweisung
+
+    /// Kleiner Patch-String mit einer Kontextzeile, einer Deletion, einer Addition.
+    private static let simplePatch = """
+    diff --git a/file.txt b/file.txt
+    --- a/file.txt
+    +++ b/file.txt
+    @@ -3,3 +3,3 @@
+      context1
+    -deleted line
+    +added line
+      context2
+    """
+
+    @Test("Kontextzeilen tragen alte UND neue Nummer")
+    func contextLineHasBothNumbers() throws {
+        let diff = DiffParser.parse(Self.simplePatch, sha: "abc1234")
+        let lines = try #require(diff.files.first?.hunks.first?.lines)
+        // Erste Zeile ist " context1" — context, startet bei oldNo=3, newNo=3
+        let first = try #require(lines.first)
+        #expect(first.type == .context)
+        #expect(first.oldLineNumber == 3)
+        #expect(first.newLineNumber == 3)
+    }
+
+    @Test("Deletion hat alte Nummer, keine neue")
+    func deletionHasOnlyOldNumber() throws {
+        let diff = DiffParser.parse(Self.simplePatch, sha: "abc1234")
+        let lines = try #require(diff.files.first?.hunks.first?.lines)
+        // Zweite Zeile ist "-deleted line"
+        let deletion = try #require(lines.first(where: { $0.type == .deletion }))
+        #expect(deletion.oldLineNumber == 4)
+        #expect(deletion.newLineNumber == nil)
+    }
+
+    @Test("Addition hat neue Nummer, keine alte")
+    func additionHasOnlyNewNumber() throws {
+        let diff = DiffParser.parse(Self.simplePatch, sha: "abc1234")
+        let lines = try #require(diff.files.first?.hunks.first?.lines)
+        // Dritte Zeile ist "+added line"
+        let addition = try #require(lines.first(where: { $0.type == .addition }))
+        #expect(addition.oldLineNumber == nil)
+        #expect(addition.newLineNumber == 4)
+    }
+
+    @Test("Zählung läuft über Zeilen hinweg korrekt fort")
+    func counterAdvancesCorrectly() throws {
+        let diff = DiffParser.parse(Self.simplePatch, sha: "abc1234")
+        let lines = try #require(diff.files.first?.hunks.first?.lines)
+        // context1: old=3, new=3
+        // deletion: old=4, new=nil
+        // addition: old=nil, new=4
+        // context2: old=5, new=5
+        let last = try #require(lines.last)
+        #expect(last.type == .context)
+        #expect(last.oldLineNumber == 5)
+        #expect(last.newLineNumber == 5)
+    }
+
+    /// Patch mit zwei Hunks — Nummern müssen pro Hunk neu starten.
+    private static let twoHunkPatch = """
+    diff --git a/file.txt b/file.txt
+    --- a/file.txt
+    +++ b/file.txt
+    @@ -1,2 +1,2 @@
+     lineA
+    -lineB
+    +lineB_new
+    @@ -10,2 +10,2 @@
+     lineC
+    -lineD
+    +lineD_new
+    """
+
+    @Test("Zweiter Hunk startet mit eigenen Zeilennummern")
+    func secondHunkStartNumbers() throws {
+        let diff = DiffParser.parse(Self.twoHunkPatch, sha: "abc1234")
+        let hunks = try #require(diff.files.first?.hunks)
+        #expect(hunks.count == 2)
+        let secondLines = hunks[1].lines
+        // Erste Zeile im zweiten Hunk: " lineC", old=10, new=10
+        let firstInSecond = try #require(secondLines.first)
+        #expect(firstInSecond.oldLineNumber == 10)
+        #expect(firstInSecond.newLineNumber == 10)
+    }
+
+    // MARK: DiffFile.maxLineNumber
+
+    @Test("maxLineNumber gibt die höchste Zeilennummer zurück")
+    func maxLineNumber() throws {
+        let diff = DiffParser.parse(Self.twoHunkPatch, sha: "abc1234")
+        let file = try #require(diff.files.first)
+        // Zweiter Hunk endet bei old=11, new=11 → max = 11
+        #expect(file.maxLineNumber == 11)
+    }
+
+    @Test("maxLineNumber ist 0 bei leerem Diff")
+    func maxLineNumberEmpty() {
+        let diff = DiffParser.parse("", sha: "abc1234")
+        let max = diff.files.first?.maxLineNumber ?? 0
+        #expect(max == 0)
+    }
+}

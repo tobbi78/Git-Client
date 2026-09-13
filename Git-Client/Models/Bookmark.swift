@@ -73,6 +73,20 @@ indirect enum BookmarkNode: Identifiable, Hashable, Codable {
 // MARK: - Hilfsmethoden für Baum-Mutationen
 
 extension [BookmarkNode] {
+    /// Gibt alle Repository-Lesezeichen im Baum rekursiv zurück (flache Liste, Tiefensuche).
+    func allRepositories() -> [RepositoryBookmark] {
+        var result: [RepositoryBookmark] = []
+        for node in self {
+            if case .repository(let repo) = node {
+                result.append(repo)
+            }
+            if case .folder(let folder) = node {
+                result.append(contentsOf: folder.children.allRepositories())
+            }
+        }
+        return result
+    }
+
     /// Gibt alle Ordner im Baum rekursiv zurück (flache Liste, Tiefensuche).
     func allFolders() -> [BookmarkFolder] {
         var result: [BookmarkFolder] = []

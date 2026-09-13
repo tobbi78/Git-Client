@@ -58,4 +58,54 @@ enum AppSettings {
             UserDefaults.standard.set(data, forKey: jiraProjectsKey)
         }
     }
+
+    // MARK: - Auto-Refresh
+
+    /// UserDefaults-Schlüssel für das Aktivieren des Auto-Refresh.
+    static let autoRefreshEnabledKey = "autoRefreshEnabled"
+
+    /// UserDefaults-Schlüssel für das Remote-Poll-Intervall (in Sekunden).
+    static let remotePollIntervalKey = "remotePollInterval"
+
+    /// Standardwert: Auto-Refresh ist eingeschaltet.
+    static let defaultAutoRefreshEnabled = true
+
+    /// Standardwert: alle 5 Minuten auf Remote-Refs prüfen.
+    static let defaultRemotePollInterval = 300
+
+    /// Mindestwert für das Remote-Poll-Intervall (verhindert zu häufige Netzwerkanfragen).
+    static let minimumRemotePollInterval = 60
+
+    /// Gibt zurück, ob der Auto-Refresh aktiv sein soll.
+    static var autoRefreshEnabled: Bool {
+        // bool(forKey:) gibt false zurück, wenn der Key nie gesetzt wurde —
+        // deshalb expliziter Check, ob der Key existiert.
+        if UserDefaults.standard.object(forKey: autoRefreshEnabledKey) == nil {
+            return defaultAutoRefreshEnabled
+        }
+        return UserDefaults.standard.bool(forKey: autoRefreshEnabledKey)
+    }
+
+    static func setAutoRefreshEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: autoRefreshEnabledKey)
+    }
+
+    /// Poll-Intervall in Sekunden. `0` deaktiviert das Remote-Polling (lokales
+    /// FSEvent-Watching bleibt aktiv). Mindestens `minimumRemotePollInterval`.
+    static var remotePollInterval: Int {
+        let stored = UserDefaults.standard.integer(forKey: remotePollIntervalKey)
+        if stored == 0 {
+            // Wert nie gesetzt → Default
+            if UserDefaults.standard.object(forKey: remotePollIntervalKey) == nil {
+                return defaultRemotePollInterval
+            }
+            // Explizit auf 0 gesetzt → Remote-Poll aus
+            return 0
+        }
+        return max(stored, minimumRemotePollInterval)
+    }
+
+    static func setRemotePollInterval(_ seconds: Int) {
+        UserDefaults.standard.set(seconds, forKey: remotePollIntervalKey)
+    }
 }

@@ -338,4 +338,61 @@ actor GitService {
         )
         return BlameParser.parse(output)
     }
+
+    // MARK: - Auto-Refresh: lokale Ref-Signatur
+
+    /// Liest die aktuelle `refs/heads`- und `refs/remotes`-Struktur des Repositories aus
+    /// und liefert ein `[refname: sha]`-Dictionary zurück.
+    /// Wird als Baseline für die lokale Änderungserkennung verwendet.
+    func localRefSignature() async -> [String: String] {
+        guard let output = try? await runner.runOrThrow(
+            ["for-each-ref",
+             "--format=%(objectname) %(refname)",
+             "refs/heads",
+             "refs/remotes"],
+            workingDirectory: repositoryPath
+        ) else { return [:] }
+        return RepoRefSnapshot.parseForEachRef(output)
+    }
+
+    // MARK: - Auto-Refresh: Remote-Ref-Liste (ls-remote, kein Objekt-Download)
+
+    /// Fragt den Server nach seinen Branch-Refs — **ohne** Commit-Objekte herunterzuladen.
+    /// Credentials werden transient in die URL injiziert (analog `fetch`).
+    /// Wirft bei Netzwerkfehler oder wenn kein Remote konfiguriert ist.
+    func remoteHeads(
+        remoteURL: String?,
+        username: String?,
+        password: String?
+    ) async throws -> [String: String] {
+        // Auth-URL aufbauen (analog fetch, GitService.swift:193)
+        let remoteArg: String
+        if let urlString = remoteURL, !urlString.isEmpty,
+           let user = username, !user.isEmpty,
+           let pass = password, !pass.isEmpty,
+           var components = URLComponents(string: urlString) {
+            components.user = user
+            components.password = pass
+            remoteArg = components.string ?? urlString
+        } else if let urlString = remoteURL, !urlString.isEmpty {
+            remoteArg = urlString
+        } else {
+            // Fallback: konfigurierten Remote-Namen verwenden
+            guard let remote = try await remoteName() else {
+                throw GitError.nonZeroExit(code: 128, stderr: "Kein Remote konfiguriert")
+            }
+            remoteArg = remote
+        }
+
+        let output = try await runner.runOrThrow(
+            ["ls-remote", "--heads", remoteArg],
+            workingDirectory: repositoryPath
+        )
+        return RepoRefSnapshot.parseLsRemote(output)
+    }
+
+    /// Gibt den ersten konfigurierten Remote-Namen zurück (analog `remoteName()` ohne throws).
+    func firstRemoteName() async -> String? {
+        try? await remoteName()
+    }
 }

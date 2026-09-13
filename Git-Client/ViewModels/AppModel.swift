@@ -15,21 +15,40 @@ final class AppModel {
     var openedRepository: RepositoryBookmark? = nil
     var repositoryViewModel: RepositoryViewModel? = nil
 
+    // MARK: - Auto-Refresh
+
+    /// Aktueller Neuigkeiten-Stand pro Repository-ID.
+    /// Von RepositoryBrowserView (Badge) und MainWindowView (Banner) beobachtet.
+    private(set) var newCommitStatus: [UUID: RepoNewCommits] = [:]
+
+    /// Session-Baseline: Ref-Signatur zum Zeitpunkt der letzten „Gesehen"-Markierung.
+    private var localBaseline: [UUID: [String: String]] = [:]
+
+    /// Mappt Repository-ID → GitService für den Monitoring-Pfad.
+    private var monitoringServices: [UUID: GitService] = [:]
+
+    private let watcher = GitFolderWatcher()
+    private var remotePollTask: Task<Void, Never>?
+
     init() {
         self.store = BookmarkStore()
         bookmarkNodes = store.load()
+        startMonitoring()
     }
 
     /// Nur für Tests: erlaubt das Injizieren eines benutzerdefinierten BookmarkStore.
     init(store: BookmarkStore) {
         self.store = store
         bookmarkNodes = store.load()
+        // Im Test-Init kein Monitoring starten (kein reales .git vorhanden).
     }
 
     // MARK: - Persistenz
 
     private func persist() {
         store.save(bookmarkNodes)
+        // Monitoring nach jeder Bookmark-Änderung neu aufsetzen
+        restartMonitoring()
     }
 
     // MARK: - Lesezeichen-Mutationen
@@ -111,12 +130,127 @@ final class AppModel {
         openedRepository = bookmark
         let vm = RepositoryViewModel(repository: bookmark)
         repositoryViewModel = vm
-        Task { await vm.load() }
+        // Beim Öffnen als „gesehen" markieren, damit kein veralteter Badge erscheint.
+        Task {
+            await vm.load()
+            await markRepositorySeen(bookmark.id)
+        }
     }
 
     func closeRepository() {
         openedRepository = nil
         repositoryViewModel = nil
+    }
+
+    // MARK: - Auto-Refresh: öffentliche Schnittstelle
+
+    /// Markiert ein Repository als „gesehen": setzt die lokale Baseline zurück
+    /// und löscht den Neuigkeiten-Badge.
+    func markRepositorySeen(_ id: UUID) async {
+        let service = monitoringServices[id]
+        let sig = await service?.localRefSignature() ?? [:]
+        localBaseline[id] = sig
+        newCommitStatus[id] = RepoNewCommits()
+    }
+
+    // MARK: - Auto-Refresh: Monitoring-Aufbau (intern)
+
+    /// Startet das Monitoring neu (z.B. nach Bookmark-Änderungen).
+    private func restartMonitoring() {
+        remotePollTask?.cancel()
+        remotePollTask = nil
+        watcher.stop()
+        startMonitoring()
+    }
+
+    private func startMonitoring() {
+        guard AppSettings.autoRefreshEnabled else { return }
+
+        let repos = bookmarkNodes.allRepositories().filter {
+            FileManager.default.fileExists(atPath: $0.path.appendingPathComponent(".git").path)
+        }
+        guard !repos.isEmpty else { return }
+
+        // Services für alle Repos anlegen/aktualisieren
+        monitoringServices = [:]
+        for repo in repos {
+            monitoringServices[repo.id] = GitService(repositoryPath: repo.path)
+        }
+
+        // Baselines asynchron setzen (beim ersten Start)
+        let reposForBaseline = repos
+        Task {
+            for repo in reposForBaseline {
+                guard localBaseline[repo.id] == nil else { continue }
+                let sig = await monitoringServices[repo.id]?.localRefSignature() ?? [:]
+                localBaseline[repo.id] = sig
+            }
+        }
+
+        // FSEvent-Watcher starten
+        let dotGitPaths = repos.map { $0.path.appendingPathComponent(".git") }
+        // Pfad→ID-Map für den Callback (Wertetyp-Copy für Sendable)
+        let pathToID: [String: UUID] = Dictionary(
+            uniqueKeysWithValues: repos.map { ($0.path.appendingPathComponent(".git").path, $0.id) }
+        )
+
+        watcher.update(paths: dotGitPaths) { [weak self] affectedDotGits in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for dotGit in affectedDotGits {
+                    guard let repoID = pathToID[dotGit.path],
+                          let service = self.monitoringServices[repoID] else { continue }
+                    let newSig = await service.localRefSignature()
+                    let baseline = self.localBaseline[repoID] ?? [:]
+                    var status = self.newCommitStatus[repoID] ?? RepoNewCommits()
+                    status.hasLocalChanges = (newSig != baseline)
+                    self.newCommitStatus[repoID] = status
+                }
+            }
+        }
+
+        // Remote-Poll-Task starten
+        let interval = AppSettings.remotePollInterval
+        guard interval > 0 else { return }
+        let reposForPoll = repos
+        remotePollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { break }
+                await self?.pollRemotes(repos: reposForPoll)
+            }
+        }
+    }
+
+    private func pollRemotes(repos: [RepositoryBookmark]) async {
+        for repo in repos {
+            guard !Task.isCancelled else { break }
+            guard let service = monitoringServices[repo.id] else { continue }
+            guard let remoteURL = repo.remoteURL, !remoteURL.isEmpty else { continue }
+
+            let password = KeychainStore.load(for: repo.id)
+            do {
+                let remoteHeads = try await service.remoteHeads(
+                    remoteURL: remoteURL,
+                    username: repo.username,
+                    password: password
+                )
+                let localSig = await service.localRefSignature()
+                let remoteName = await service.firstRemoteName() ?? "origin"
+                let aheadCount = RepoRefSnapshot.remoteAhead(
+                    localSignature: localSig,
+                    remoteHeads: remoteHeads,
+                    remoteName: remoteName
+                )
+                await MainActor.run {
+                    var status = newCommitStatus[repo.id] ?? RepoNewCommits()
+                    status.remoteAheadBranches = aheadCount
+                    newCommitStatus[repo.id] = status
+                }
+            } catch {
+                // Offline, fehlende Credentials etc. — still ignorieren
+            }
+        }
     }
 
     // MARK: - NSOpenPanel

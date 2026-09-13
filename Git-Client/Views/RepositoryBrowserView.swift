@@ -185,6 +185,28 @@ private struct BookmarkNodeView: View {
                     .truncationMode(.middle)
             }
             Spacer()
+            // Auto-Refresh-Badge: neue Commits vorhanden
+            if pathExists, let news = appModel.newCommitStatus[repo.id], news.hasNews {
+                let helpText: String = {
+                    var parts: [String] = []
+                    if news.hasLocalChanges { parts.append("Neue lokale Commits") }
+                    if news.remoteAheadBranches > 0 {
+                        let label = news.remoteAheadBranches == 1
+                            ? "1 Branch auf dem Server voraus"
+                            : "\(news.remoteAheadBranches) Branches auf dem Server voraus"
+                        parts.append(label)
+                    }
+                    return parts.joined(separator: " · ")
+                }()
+                HStack(spacing: 3) {
+                    Image(systemName: "circle.fill")
+                        .font(.system(size: 7))
+                    Text("neu")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(Color.accentColor)
+                .help(helpText)
+            }
             if !pathExists {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.caption)

@@ -24,9 +24,12 @@ struct SettingsView: View {
     @State private var draftBaseURL: String = ""
     @State private var draftProjects: [JiraProject] = []
     @State private var selectedProjectID: UUID? = nil
+    @State private var draftAutoRefreshEnabled: Bool = true
+    @State private var draftPollIntervalText: String = ""
 
     // MARK: UI-Hilfszustand
     @State private var showMinWarning = false
+    @State private var showPollIntervalWarning = false
     @State private var showCloseConfirmation = false
 
     @Environment(\.dismiss) private var dismiss
@@ -37,10 +40,19 @@ struct SettingsView: View {
         Int(draftBatchText.trimmingCharacters(in: .whitespaces))
     }
 
+    private var parsedPollInterval: Int? {
+        let text = draftPollIntervalText.trimmingCharacters(in: .whitespaces)
+        if text == "0" { return 0 }
+        guard let v = Int(text), v > 0 else { return nil }
+        return v
+    }
+
     private var hasChanges: Bool {
         parsedBatch != savedBatchSize
         || draftBaseURL != AppSettings.jiraBaseURL
         || draftProjects != AppSettings.jiraProjects
+        || draftAutoRefreshEnabled != AppSettings.autoRefreshEnabled
+        || parsedPollInterval != AppSettings.remotePollInterval
     }
 
     // MARK: - Body
@@ -57,6 +69,11 @@ struct SettingsView: View {
                     .tabItem {
                         Label("Commits", systemImage: "list.bullet")
                     }
+
+                autoRefreshTab
+                    .tabItem {
+                        Label("Aktualisierung", systemImage: "arrow.clockwise")
+                    }
             }
 
             Divider()
@@ -68,7 +85,7 @@ struct SettingsView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Speichern") { saveAndClose() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(parsedBatch == nil)
+                    .disabled(parsedBatch == nil || parsedPollInterval == nil)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -230,12 +247,55 @@ struct SettingsView: View {
         .padding(.bottom, 4)
     }
 
+    // MARK: - Reiter: Aktualisierung
+
+    private var autoRefreshTab: some View {
+        Form {
+            Section {
+                Toggle("Neue Commits automatisch anzeigen", isOn: $draftAutoRefreshEnabled)
+                Text("Beobachtet alle Repositories im Hintergrund per FSEvents und zeigt einen dezenten Hinweis, wenn neue Commits vorhanden sind.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Automatische Erkennung")
+            }
+
+            Section {
+                HStack {
+                    TextField("", text: $draftPollIntervalText)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+                        .disabled(!draftAutoRefreshEnabled)
+                    Text("Sekunden (0 = aus)")
+                        .foregroundStyle(draftAutoRefreshEnabled ? Color.primary : Color.secondary)
+                }
+
+                if showPollIntervalWarning {
+                    Text("Mindestwert: \(AppSettings.minimumRemotePollInterval) Sekunden (oder 0 zum Deaktivieren)")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Text("Wie oft der Server nach neuen Commit-Refs gefragt wird (git ls-remote — kein Download). 0 deaktiviert den Remote-Check; lokale FSEvent-Erkennung bleibt aktiv.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Remote-Prüf-Intervall")
+            }
+            .disabled(!draftAutoRefreshEnabled)
+        }
+        .formStyle(.grouped)
+        .padding(.bottom, 4)
+    }
+
     // MARK: - Aktionen
 
     private func syncDraftFromSettings() {
         draftBatchText = "\(savedBatchSize)"
         draftBaseURL   = AppSettings.jiraBaseURL
         draftProjects  = AppSettings.jiraProjects
+        draftAutoRefreshEnabled = AppSettings.autoRefreshEnabled
+        draftPollIntervalText   = "\(AppSettings.remotePollInterval)"
     }
 
     private func saveAndClose() {
@@ -258,6 +318,21 @@ struct SettingsView: View {
         AppSettings.setJiraProjects(draftProjects.filter {
             !$0.key.trimmingCharacters(in: .whitespaces).isEmpty
         })
+
+        // Auto-Refresh
+        AppSettings.setAutoRefreshEnabled(draftAutoRefreshEnabled)
+        if let rawInterval = parsedPollInterval {
+            let clampedInterval = rawInterval == 0 ? 0 : max(rawInterval, AppSettings.minimumRemotePollInterval)
+            if clampedInterval != rawInterval {
+                showPollIntervalWarning = true
+                draftPollIntervalText = "\(clampedInterval)"
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    showPollIntervalWarning = false
+                }
+            }
+            AppSettings.setRemotePollInterval(clampedInterval)
+        }
 
         syncDraftFromSettings()
         dismiss()

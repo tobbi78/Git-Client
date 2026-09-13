@@ -1689,3 +1689,146 @@ struct GitServiceSearchTests {
         #expect(results.isEmpty)
     }
 }
+
+// MARK: - BranchParserTests
+
+@Suite("BranchParserTests")
+struct BranchParserTests {
+
+    /// Hilfsfunktion: GitService-Instanz mit dummy-Pfad (nur Parser-Methoden werden getestet)
+    private func service() -> GitService { GitService(repositoryPath: URL(fileURLWithPath: "/tmp")) }
+
+    // MARK: parseTrack
+
+    @Test("parseTrack: ahead und behind")
+    func parseTrackAheadAndBehind() {
+        let svc = service()
+        let result = svc.parseTrack("ahead 2, behind 3")
+        #expect(result.ahead == 2)
+        #expect(result.behind == 3)
+    }
+
+    @Test("parseTrack: nur ahead")
+    func parseTrackAheadOnly() {
+        let result = service().parseTrack("ahead 1")
+        #expect(result.ahead == 1)
+        #expect(result.behind == 0)
+    }
+
+    @Test("parseTrack: nur behind")
+    func parseTrackBehindOnly() {
+        let result = service().parseTrack("behind 4")
+        #expect(result.ahead == 0)
+        #expect(result.behind == 4)
+    }
+
+    @Test("parseTrack: leer → 0/0")
+    func parseTrackEmpty() {
+        let result = service().parseTrack("")
+        #expect(result.ahead == 0)
+        #expect(result.behind == 0)
+    }
+
+    @Test("parseTrack: gone → 0/0")
+    func parseTrackGone() {
+        let result = service().parseTrack("gone")
+        #expect(result.ahead == 0)
+        #expect(result.behind == 0)
+    }
+
+    // MARK: parseBranches
+
+    /// Baut eine Tab-getrennte Zeile mit allen 5 Feldern
+    private func line(refname: String, sha: String = "abc1234", head: String = " ",
+                      upstream: String = "", track: String = "") -> String {
+        "\(refname)\t\(sha)\t\(head)\t\(upstream)\t\(track)"
+    }
+
+    @Test("Lokaler Branch mit ahead 2 / behind 3")
+    func localBranchAheadBehind() {
+        let svc = service()
+        let input = line(refname: "refs/heads/main", upstream: "origin/main",
+                         track: "ahead 2, behind 3")
+        let branches = svc.parseBranches(from: input)
+        #expect(branches.count == 1)
+        let b = branches[0]
+        #expect(b.upstreamName == "origin/main")
+        #expect(b.ahead == 2)
+        #expect(b.behind == 3)
+    }
+
+    @Test("Lokaler Branch nur ahead")
+    func localBranchAheadOnly() {
+        let b = service().parseBranches(from:
+            line(refname: "refs/heads/feature", upstream: "origin/feature", track: "ahead 1")
+        ).first
+        #expect(b?.ahead == 1)
+        #expect(b?.behind == 0)
+    }
+
+    @Test("Lokaler Branch nur behind")
+    func localBranchBehindOnly() {
+        let b = service().parseBranches(from:
+            line(refname: "refs/heads/main", upstream: "origin/main", track: "behind 4")
+        ).first
+        #expect(b?.ahead == 0)
+        #expect(b?.behind == 4)
+    }
+
+    @Test("Lokaler Branch mit Upstream, leerer Track → 0/0")
+    func localBranchUpstreamNoTrack() {
+        let b = service().parseBranches(from:
+            line(refname: "refs/heads/main", upstream: "origin/main", track: "")
+        ).first
+        #expect(b?.upstreamName == "origin/main")
+        #expect(b?.ahead == 0)
+        #expect(b?.behind == 0)
+    }
+
+    @Test("Lokaler Branch ohne Upstream → nil")
+    func localBranchNoUpstream() {
+        let b = service().parseBranches(from:
+            line(refname: "refs/heads/local", upstream: "", track: "")
+        ).first
+        #expect(b?.upstreamName == nil)
+        #expect(b?.ahead == nil)
+        #expect(b?.behind == nil)
+    }
+
+    @Test("Lokaler Branch mit gone → 0/0, Upstream gesetzt")
+    func localBranchGone() {
+        let b = service().parseBranches(from:
+            line(refname: "refs/heads/old", upstream: "origin/old", track: "gone")
+        ).first
+        #expect(b?.upstreamName == "origin/old")
+        #expect(b?.ahead == 0)
+        #expect(b?.behind == 0)
+    }
+
+    @Test("Remote Branch hat keine Tracking-Felder")
+    func remoteBranchNoTracking() {
+        let b = service().parseBranches(from:
+            line(refname: "refs/remotes/origin/main", upstream: "", track: "")
+        ).first
+        #expect(b?.isRemote == true)
+        #expect(b?.upstreamName == nil)
+        #expect(b?.ahead == nil)
+        #expect(b?.behind == nil)
+    }
+
+    @Test("Rückwärtskompatibilität: 3-Feld-Zeile parst ohne Crash, Tracking nil")
+    func threeFieldLineBackwardCompat() {
+        let input = "refs/heads/main\tabc1234\t*"
+        let b = service().parseBranches(from: input).first
+        #expect(b != nil)
+        #expect(b?.upstreamName == nil)
+        #expect(b?.ahead == nil)
+    }
+
+    @Test("refs/remotes/origin/HEAD wird übersprungen")
+    func remoteHeadSkipped() {
+        let input = line(refname: "refs/remotes/origin/HEAD")
+        let branches = service().parseBranches(from: input)
+        #expect(branches.isEmpty)
+    }
+}

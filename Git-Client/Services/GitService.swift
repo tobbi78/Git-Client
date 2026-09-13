@@ -75,7 +75,8 @@ actor GitService {
     // MARK: - Branches
 
     func loadBranches() async throws -> [Branch] {
-        let format = "%(refname)\t%(objectname)\t%(HEAD)"  // voller SHA, kein :short
+        // Felder: refname, SHA, HEAD-Marker, Upstream-Kurzname, Tracking-Info
+        let format = "%(refname)\t%(objectname)\t%(HEAD)\t%(upstream:short)\t%(upstream:track,nobracket)"
         let output = try await runner.runOrThrow(
             ["for-each-ref", "--format=\(format)", "refs/heads", "refs/remotes"],
             workingDirectory: repositoryPath
@@ -83,7 +84,7 @@ actor GitService {
         return parseBranches(from: output)
     }
 
-    func parseBranches(from output: String) -> [Branch] {
+    nonisolated func parseBranches(from output: String) -> [Branch] {
         output.components(separatedBy: "\n")
             .filter { !$0.isEmpty }
             .compactMap { line -> Branch? in
@@ -92,11 +93,19 @@ actor GitService {
                 let refname = fields[0]
                 let sha = fields[1]
                 let isCurrent = fields[2] == "*"
+                // Tracking-Felder defensiv lesen — ältere Zeilen (< 5 Felder) bleiben nil
+                let upstreamShort = fields.count >= 4 ? fields[3] : ""
+                let trackString   = fields.count >= 5 ? fields[4] : ""
 
                 if refname.hasPrefix("refs/heads/") {
                     let name = String(refname.dropFirst("refs/heads/".count))
+                    // Upstream nur setzen, wenn tatsächlich konfiguriert
+                    let hasUpstream = !upstreamShort.isEmpty
+                    let tracking = hasUpstream ? parseTrack(trackString) : nil
                     return Branch(name: name, shortName: name, isCurrent: isCurrent,
-                                  isRemote: false, remoteName: nil, tipSha: sha)
+                                  isRemote: false, remoteName: nil, tipSha: sha,
+                                  upstreamName: hasUpstream ? upstreamShort : nil,
+                                  ahead: tracking?.ahead, behind: tracking?.behind)
                 }
 
                 if refname.hasPrefix("refs/remotes/") {
@@ -109,11 +118,31 @@ actor GitService {
                         ? String(remoteRef[remoteRef.index(after: slashIdx)...])
                         : remoteRef
                     return Branch(name: remoteRef, shortName: shortName, isCurrent: false,
-                                  isRemote: true, remoteName: remoteName, tipSha: sha)
+                                  isRemote: true, remoteName: remoteName, tipSha: sha,
+                                  upstreamName: nil, ahead: nil, behind: nil)
                 }
 
                 return nil
             }
+    }
+
+    /// Parst den `%(upstream:track,nobracket)`-String (z.B. „ahead 2, behind 3")
+    /// und extrahiert die Anzahl der vorausgehenden / fehlenden Commits.
+    /// Bei `gone`, leerem String oder nicht erkanntem Format wird (0, 0) zurückgegeben.
+    nonisolated func parseTrack(_ track: String) -> (ahead: Int, behind: Int) {
+        guard !track.isEmpty, track != "gone" else { return (0, 0) }
+        var ahead = 0
+        var behind = 0
+        // Kommaseparierte Segmente: "ahead 2", "behind 3"
+        for segment in track.components(separatedBy: ",") {
+            let part = segment.trimmingCharacters(in: .whitespaces)
+            if part.hasPrefix("ahead "), let n = Int(part.dropFirst("ahead ".count)) {
+                ahead = n
+            } else if part.hasPrefix("behind "), let n = Int(part.dropFirst("behind ".count)) {
+                behind = n
+            }
+        }
+        return (ahead, behind)
     }
 
     // MARK: - Tags

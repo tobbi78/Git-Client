@@ -627,6 +627,26 @@ private struct BranchRowView: View {
                 .font(.callout)
                 .fontWeight(branch.isCurrent ? .semibold : .regular)
             Spacer()
+            // Ahead/Behind-Badge: nur bei lokalem Branch mit Upstream und Abweichung
+            if branch.upstreamName != nil {
+                let a = branch.ahead ?? 0
+                let b = branch.behind ?? 0
+                if a > 0 || b > 0 {
+                    HStack(spacing: 3) {
+                        if a > 0 {
+                            Label("\(a)", systemImage: "arrow.up")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        if b > 0 {
+                            Label("\(b)", systemImage: "arrow.down")
+                                .labelStyle(.titleAndIcon)
+                        }
+                    }
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .help("Upstream: \(branch.upstreamName!) · \(a) voraus, \(b) hinterher")
+                }
+            }
             Text(String(branch.tipSha.prefix(7)))
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.tertiary)

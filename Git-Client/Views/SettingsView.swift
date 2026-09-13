@@ -2,10 +2,10 @@
 //  SettingsView.swift
 //  Git-Client
 //
-//  App-Einstellungen (⌘,): Commit-Batch-Größe für das Lazy Loading.
-//  Änderungen werden erst beim Klick auf „Speichern" übernommen.
-//  Wird das Fenster ohne Speichern geschlossen und es gibt Änderungen,
-//  erscheint eine Bestätigungs-Warnung.
+//  App-Einstellungen (⌘,): JIRA-Konfiguration und Commit-Batch-Größe.
+//  Zwei Reiter (JIRA zuerst, dann Commits). Änderungen werden erst beim
+//  Klick auf „Speichern" übernommen. Wird das Fenster ohne Speichern
+//  geschlossen und es gibt Änderungen, erscheint eine Bestätigungs-Warnung.
 //
 
 import SwiftUI
@@ -15,126 +15,256 @@ import AppKit
 
 struct SettingsView: View {
 
-    // Persistierter Wert (UserDefaults) — Quelle der Wahrheit
+    // MARK: Commit-Batch (persistiert)
     @AppStorage(AppSettings.commitBatchSizeKey)
     private var savedBatchSize: Int = AppSettings.defaultCommitBatchSize
 
-    // Lokaler Entwurf — wird erst beim Speichern nach UserDefaults geschrieben
-    @State private var draftText: String = ""
+    // MARK: Draft-State
+    @State private var draftBatchText: String = ""
+    @State private var draftBaseURL: String = ""
+    @State private var draftProjects: [JiraProject] = []
+    @State private var selectedProjectID: UUID? = nil
+
+    // MARK: UI-Hilfszustand
     @State private var showMinWarning = false
     @State private var showCloseConfirmation = false
 
     @Environment(\.dismiss) private var dismiss
 
-    // MARK: Abgeleitete Werte
+    // MARK: - Abgeleitete Werte
 
-    private var parsedDraft: Int? {
-        Int(draftText.trimmingCharacters(in: .whitespaces))
+    private var parsedBatch: Int? {
+        Int(draftBatchText.trimmingCharacters(in: .whitespaces))
     }
 
-    /// true wenn der eingetippte Wert vom gespeicherten Wert abweicht.
     private var hasChanges: Bool {
-        parsedDraft != savedBatchSize
+        parsedBatch != savedBatchSize
+        || draftBaseURL != AppSettings.jiraBaseURL
+        || draftProjects != AppSettings.jiraProjects
     }
 
-    // MARK: Body
+    // MARK: - Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Form {
-                Section {
-                    HStack {
-                        TextField("", text: $draftText)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
-
-                        Text("Commits pro Ladevorgang")
-                            .foregroundStyle(.primary)
+            TabView {
+                jiraTab
+                    .tabItem {
+                        Label("JIRA", systemImage: "link")
                     }
 
-                    if showMinWarning {
-                        Text("Mindestwert: \(AppSettings.minimumCommitBatchSize) Commits")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                commitsTab
+                    .tabItem {
+                        Label("Commits", systemImage: "list.bullet")
                     }
-
-                    Text("Beim Öffnen eines Repositories werden zunächst so viele Commits geladen. Scrollt man ans Ende der Liste, wird die nächste Gruppe nachgeladen. Die Änderung greift beim nächsten Öffnen oder Neu-Laden eines Repositories.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text("Commit-Liste")
-                }
             }
-            .formStyle(.grouped)
 
             Divider()
 
-            // Speichern / Abbrechen
+            // Globaler Speichern / Abbrechen-Bereich
             HStack {
                 Spacer()
                 Button("Abbrechen") { cancelAndClose() }
                     .keyboardShortcut(.cancelAction)
                 Button("Speichern") { saveAndClose() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(parsedDraft == nil)
+                    .disabled(parsedBatch == nil)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(width: 380)
-        // Draft beim (erneuten) Öffnen des Einstellungs-Fensters synchronisieren
-        .onAppear { draftText = "\(savedBatchSize)" }
-        .onChange(of: savedBatchSize) { _, newValue in draftText = "\(newValue)" }
-        // Warnung bei ungespeicherten Änderungen
+        .frame(minWidth: 480)
+        .onAppear { syncDraftFromSettings() }
+        .onChange(of: savedBatchSize) { _, _ in syncDraftFromSettings() }
         .confirmationDialog(
             "Ungespeicherte Änderungen",
             isPresented: $showCloseConfirmation,
             titleVisibility: .visible
         ) {
             Button("Änderungen verwerfen", role: .destructive) {
-                // Draft zurücksetzen → Guard lässt das Schließen zu
-                draftText = "\(savedBatchSize)"
+                syncDraftFromSettings()
                 dismiss()
             }
             Button("Zurück zum Dialog", role: .cancel) { }
         } message: {
-            Text("Die geänderte Batch-Größe wurde nicht gespeichert. Beim Schließen gehen die Änderungen verloren.")
+            Text("Es gibt ungespeicherte Änderungen. Beim Schließen gehen sie verloren.")
         }
-        // Fenster-Schließen-Button abfangen (AppKit-Brücke)
         .background(
             WindowCloseGuard {
                 if hasChanges {
                     showCloseConfirmation = true
-                    return false    // Schließen vorerst verhindern
+                    return false
                 }
-                return true         // keine Änderung → normal schließen
+                return true
             }
         )
     }
 
-    // MARK: Aktionen
+    // MARK: - Reiter: JIRA
+
+    private var jiraTab: some View {
+        Form {
+            Section {
+                TextField("https://firma.atlassian.net", text: $draftBaseURL)
+                    .textFieldStyle(.roundedBorder)
+
+                Text("Basis-URL deines JIRA-Servers. Ticket-Links werden als <Basis-URL>/browse/<KEY-123> geöffnet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Server")
+            }
+
+            Section {
+                // Projektliste mit editierbaren Zeilen
+                VStack(spacing: 0) {
+                    // Spaltenheader
+                    HStack {
+                        Text("Projekt-Key")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 110, alignment: .leading)
+                        Text("Beschreibung")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 4)
+
+                    Divider()
+
+                    // Einträge
+                    List(selection: $selectedProjectID) {
+                        ForEach($draftProjects) { $project in
+                            HStack(spacing: 8) {
+                                TextField("KEY", text: $project.key)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 100)
+                                    .font(.system(.body, design: .monospaced))
+                                TextField("Beschreibung (optional)", text: $project.description)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            .tag(project.id)
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .listStyle(.bordered)
+                    .frame(minHeight: 120, idealHeight: 160)
+                    .alternatingRowBackgrounds()
+
+                    Divider()
+
+                    // +/− Buttons
+                    HStack(spacing: 0) {
+                        Button {
+                            let newProject = JiraProject()
+                            draftProjects.append(newProject)
+                            selectedProjectID = newProject.id
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Neues Projekt hinzufügen")
+
+                        Button {
+                            if let sel = selectedProjectID {
+                                draftProjects.removeAll { $0.id == sel }
+                                selectedProjectID = nil
+                            }
+                        } label: {
+                            Image(systemName: "minus")
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(selectedProjectID == nil)
+                        .help("Ausgewähltes Projekt entfernen")
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                }
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 0.5))
+
+                Text("Erkennt Ticket-Keys wie PROJ-123 in Commit-Nachrichten und zeigt sie als klickbare Links im Commit-Detail an.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Projekte")
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: - Reiter: Commits
+
+    private var commitsTab: some View {
+        Form {
+            Section {
+                HStack {
+                    TextField("", text: $draftBatchText)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 80)
+
+                    Text("Commits pro Ladevorgang")
+                        .foregroundStyle(.primary)
+                }
+
+                if showMinWarning {
+                    Text("Mindestwert: \(AppSettings.minimumCommitBatchSize) Commits")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Text("Beim Öffnen eines Repositories werden zunächst so viele Commits geladen. Scrollt man ans Ende der Liste, wird die nächste Gruppe nachgeladen. Die Änderung greift beim nächsten Öffnen oder Neu-Laden eines Repositories.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Commit-Liste")
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: - Aktionen
+
+    private func syncDraftFromSettings() {
+        draftBatchText = "\(savedBatchSize)"
+        draftBaseURL   = AppSettings.jiraBaseURL
+        draftProjects  = AppSettings.jiraProjects
+    }
 
     private func saveAndClose() {
-        guard let value = parsedDraft else { return }
+        guard let value = parsedBatch else { return }
+
+        // Batch-Größe
         let clamped = max(value, AppSettings.minimumCommitBatchSize)
         if clamped != value {
-            // Eingabe wurde auf Mindestwert korrigiert → kurzen Hinweis zeigen
             showMinWarning = true
-            draftText = "\(clamped)"
+            draftBatchText = "\(clamped)"
             Task {
                 try? await Task.sleep(for: .seconds(3))
                 showMinWarning = false
             }
         }
-        savedBatchSize = clamped    // → UserDefaults
-        // Draft synchronisieren, damit der Guard beim dismiss keine Änderung mehr sieht
-        draftText = "\(clamped)"
+        savedBatchSize = clamped
+
+        // JIRA
+        AppSettings.setJiraBaseURL(draftBaseURL.trimmingCharacters(in: .whitespacesAndNewlines))
+        AppSettings.setJiraProjects(draftProjects.filter {
+            !$0.key.trimmingCharacters(in: .whitespaces).isEmpty
+        })
+
+        syncDraftFromSettings()
         dismiss()
     }
 
     private func cancelAndClose() {
-        // Draft zurücksetzen → Guard (windowShouldClose) lässt das Schließen zu
-        draftText = "\(savedBatchSize)"
+        syncDraftFromSettings()
         dismiss()
     }
 }
@@ -153,7 +283,6 @@ private struct WindowCloseGuard: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        // Das Fenster ist erst nach dem Einhängen in die View-Hierarchie verfügbar.
         DispatchQueue.main.async {
             context.coordinator.attach(to: view.window)
         }
@@ -162,13 +291,10 @@ private struct WindowCloseGuard: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.shouldClose = shouldClose
-        // Bei SwiftUI-Updates erneut einhängen (falls Fenster nach makeNSView gesetzt wurde)
         if let window = nsView.window {
             context.coordinator.attach(to: window)
         }
     }
-
-    // MARK: Coordinator
 
     final class Coordinator: NSObject, NSWindowDelegate {
         var shouldClose: () -> Bool
@@ -178,8 +304,6 @@ private struct WindowCloseGuard: NSViewRepresentable {
         }
 
         func attach(to window: NSWindow?) {
-            // delegate ist weak in NSWindow → der Coordinator hält sich selbst
-            // über den NSViewRepresentable-Lebenszyklus am Leben.
             window?.delegate = self
         }
 

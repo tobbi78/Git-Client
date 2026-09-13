@@ -1832,3 +1832,118 @@ struct BranchParserTests {
         #expect(branches.isEmpty)
     }
 }
+
+// MARK: - JiraLinkerTests
+
+@Suite("JiraLinkerTests")
+struct JiraLinkerTests {
+
+    private let baseURL = "https://jira.example.com"
+    private var projects: [JiraProject] {
+        [JiraProject(key: "PROJ", description: "Main Project"),
+         JiraProject(key: "INFRA", description: "Infrastructure")]
+    }
+
+    @Test("Einzel-Treffer → korrekte Browse-URL")
+    func singleMatch() {
+        let tickets = JiraLinker.tickets(in: "fix: PROJ-42 crashes on start",
+                                         projects: projects, baseURL: baseURL)
+        #expect(tickets.count == 1)
+        #expect(tickets[0].key == "PROJ-42")
+        #expect(tickets[0].url.absoluteString == "https://jira.example.com/browse/PROJ-42")
+        #expect(tickets[0].projectDescription == "Main Project")
+    }
+
+    @Test("Mehrere Tickets aus verschiedenen Projekten")
+    func multipleProjects() {
+        let text = "feat: PROJ-1 und INFRA-7 integriert"
+        let tickets = JiraLinker.tickets(in: text, projects: projects, baseURL: baseURL)
+        #expect(tickets.count == 2)
+        #expect(tickets.map(\.key) == ["PROJ-1", "INFRA-7"])
+    }
+
+    @Test("Duplikate werden dedupliziert")
+    func deduplication() {
+        let text = "fix: PROJ-10 behoben, PROJ-10 war kritisch"
+        let tickets = JiraLinker.tickets(in: text, projects: projects, baseURL: baseURL)
+        #expect(tickets.count == 1)
+        #expect(tickets[0].key == "PROJ-10")
+    }
+
+    @Test("Nicht konfigurierter Key wird ignoriert")
+    func unconfiguredKeyIgnored() {
+        let tickets = JiraLinker.tickets(in: "fix: FOO-99 crash",
+                                         projects: projects, baseURL: baseURL)
+        #expect(tickets.isEmpty)
+    }
+
+    @Test("Wortgrenze: XPROJ-1 ist kein Treffer für Key PROJ")
+    func wordBoundary() {
+        let tickets = JiraLinker.tickets(in: "update XPROJ-1 config",
+                                         projects: projects, baseURL: baseURL)
+        #expect(tickets.isEmpty)
+    }
+
+    @Test("Basis-URL mit abschließendem Slash → identische URL")
+    func baseURLWithTrailingSlash() {
+        let tickets = JiraLinker.tickets(in: "PROJ-5 fix",
+                                         projects: projects, baseURL: baseURL + "/")
+        #expect(tickets.count == 1)
+        #expect(tickets[0].url.absoluteString == "https://jira.example.com/browse/PROJ-5")
+    }
+
+    @Test("Leere Basis-URL → keine Treffer")
+    func emptyBaseURL() {
+        let tickets = JiraLinker.tickets(in: "PROJ-1 fix", projects: projects, baseURL: "")
+        #expect(tickets.isEmpty)
+    }
+
+    @Test("Leerer Key in Projektliste wird übersprungen")
+    func emptyKeySkipped() {
+        let projs = [JiraProject(key: "", description: "Leer"), JiraProject(key: "PROJ", description: "P")]
+        let tickets = JiraLinker.tickets(in: "PROJ-3 fix", projects: projs, baseURL: baseURL)
+        #expect(tickets.count == 1)
+        #expect(tickets[0].key == "PROJ-3")
+    }
+
+    @Test("Beschreibung korrekt durchgereicht")
+    func descriptionPropagated() {
+        let tickets = JiraLinker.tickets(in: "INFRA-2 update",
+                                         projects: projects, baseURL: baseURL)
+        #expect(tickets.first?.projectDescription == "Infrastructure")
+    }
+}
+
+// MARK: - JiraSettingsTests
+
+@Suite("JiraSettingsTests")
+struct JiraSettingsTests {
+
+    /// Isolierter UserDefaults-Suite, um die App-Einstellungen nicht zu verändern
+    private var defaults: UserDefaults {
+        UserDefaults(suiteName: "de.test.JiraSettingsTests")!
+    }
+
+    private func cleanup() {
+        defaults.removePersistentDomain(forName: "de.test.JiraSettingsTests")
+    }
+
+    @Test("JiraProject Encode/Decode-Roundtrip")
+    func jiraProjectRoundtrip() throws {
+        defer { cleanup() }
+        let projects = [
+            JiraProject(id: UUID(), key: "PROJ", description: "Main"),
+            JiraProject(id: UUID(), key: "INFRA", description: "Infra")
+        ]
+        let data = try JSONEncoder().encode(projects)
+        let decoded = try JSONDecoder().decode([JiraProject].self, from: data)
+        #expect(decoded == projects)
+    }
+
+    @Test("Leere Projektliste kodiert und dekodiert korrekt")
+    func emptyProjectList() throws {
+        let data = try JSONEncoder().encode([JiraProject]())
+        let decoded = try JSONDecoder().decode([JiraProject].self, from: data)
+        #expect(decoded.isEmpty)
+    }
+}

@@ -27,6 +27,15 @@ struct Git_ClientApp: App {
             }
             .environment(appModel)
             .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
+            .task {
+                // Beim ersten Erscheinen NSAppearance synchronisieren, damit semantische
+                // NSColor-Werte (z.B. .labelColor) sofort korrekt auflösen.
+                applyNSAppearance(appearanceRaw)
+            }
+            .onChange(of: appearanceRaw) { _, newRaw in
+                // Bei jedem Erscheinungsbild-Wechsel AppKit konsistent halten.
+                applyNSAppearance(newRaw)
+            }
         }
         .defaultSize(width: 1200, height: 780)
 
@@ -34,5 +43,11 @@ struct Git_ClientApp: App {
         Settings {
             SettingsView()
         }
+    }
+
+    /// Setzt NSApplication.shared.appearance, damit AppKit-Farben
+    /// (Color(nsColor:)) nach jedem Wechsel korrekt auflösen.
+    private func applyNSAppearance(_ raw: String) {
+        NSApplication.shared.appearance = AppAppearance(rawValue: raw)?.nsAppearance
     }
 }

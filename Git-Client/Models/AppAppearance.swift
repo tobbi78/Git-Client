@@ -26,4 +26,15 @@ enum AppAppearance: String, CaseIterable, Identifiable, Sendable {
         case .dark:   return .dark
         }
     }
+
+    /// Entsprechende NSAppearance für AppKit; nil = dem System folgen.
+    /// Wird benötigt, damit semantische NSColor-Werte (z.B. .labelColor)
+    /// nach jedem Erscheinungsbild-Wechsel korrekt auflösen.
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light:  return NSAppearance(named: .aqua)
+        case .dark:   return NSAppearance(named: .darkAqua)
+        }
+    }
 }

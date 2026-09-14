@@ -2419,6 +2419,21 @@ struct AppAppearanceTests {
         let result = raw.flatMap { AppAppearance(rawValue: $0) } ?? AppSettings.defaultAppearance
         #expect(result == .system)
     }
+
+    @Test("nsAppearance: system → nil")
+    func nsAppearanceSystemIsNil() {
+        #expect(AppAppearance.system.nsAppearance == nil)
+    }
+
+    @Test("nsAppearance: light → .aqua")
+    func nsAppearanceLightIsAqua() {
+        #expect(AppAppearance.light.nsAppearance?.name == .aqua)
+    }
+
+    @Test("nsAppearance: dark → .darkAqua")
+    func nsAppearanceDarkIsDarkAqua() {
+        #expect(AppAppearance.dark.nsAppearance?.name == .darkAqua)
+    }
 }
 
 // MARK: - AppSettings Erweitert (JIRA, Auto-Refresh, Poll-Intervall, Anzeige)

@@ -16,6 +16,21 @@ struct Git_ClientApp: App {
     @State private var appModel = AppModel()
     @AppStorage(AppSettings.appearanceKey) private var appearanceRaw = AppSettings.defaultAppearance.rawValue
 
+    // Explizit gespeichertes Farbschema: nie nil — onChange setzt es VOR dem nächsten
+    // Render-Lauf, damit .preferredColorScheme immer einen konkreten Wert bekommt.
+    // Der Initialwert darf NSApp NICHT nutzen (noch nil beim App-Start) — für
+    // "Wie System" wird stattdessen der System-UserDefaults-Schlüssel gelesen.
+    @State private var resolvedScheme: ColorScheme = {
+        let raw = UserDefaults.standard.string(forKey: AppSettings.appearanceKey)
+            ?? AppSettings.defaultAppearance.rawValue
+        if let scheme = AppAppearance(rawValue: raw)?.colorScheme {
+            return scheme
+        }
+        // System: AppleInterfaceStyle == "Dark" → Dunkel, sonst Hell
+        return UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+            ? .dark : .light
+    }()
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -26,7 +41,17 @@ struct Git_ClientApp: App {
                 }
             }
             .environment(appModel)
-            .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
+            .preferredColorScheme(resolvedScheme)
+            .task {
+                applyNSAppearance(appearanceRaw)
+                resolvedScheme = Self.computeScheme(appearanceRaw)
+            }
+            .onChange(of: appearanceRaw) { _, newRaw in
+                // applyNSAppearance VOR computeScheme: NSApp.effectiveAppearance
+                // spiegelt nach dem Setzen von NSApp.appearance sofort den neuen Wert.
+                applyNSAppearance(newRaw)
+                resolvedScheme = Self.computeScheme(newRaw)
+            }
         }
         .defaultSize(width: 1200, height: 780)
 
@@ -34,5 +59,23 @@ struct Git_ClientApp: App {
         Settings {
             SettingsView()
         }
+    }
+
+    /// Leitet den ColorScheme-Wert aus dem rawValue ab. Für „Wie System" wird
+    /// NSApp.effectiveAppearance herangezogen — nach applyNSAppearance bereits korrekt.
+    private static func computeScheme(_ raw: String) -> ColorScheme {
+        if let scheme = AppAppearance(rawValue: raw)?.colorScheme {
+            return scheme
+        }
+        return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .dark : .light
+    }
+
+    /// Setzt NSApplication- und Fenster-Appearance, damit AppKit-Farben
+    /// (Color(nsColor:)) sofort und ohne Fokus-Wechsel korrekt auflösen.
+    private func applyNSAppearance(_ raw: String) {
+        let nsAppearance = AppAppearance(rawValue: raw)?.nsAppearance
+        NSApplication.shared.appearance = nsAppearance
+        NSApplication.shared.windows.forEach { $0.appearance = nsAppearance }
     }
 }

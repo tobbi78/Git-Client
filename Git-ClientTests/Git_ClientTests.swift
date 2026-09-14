@@ -2420,3 +2420,319 @@ struct AppAppearanceTests {
         #expect(result == .system)
     }
 }
+
+// MARK: - AppSettings Erweitert (JIRA, Auto-Refresh, Poll-Intervall, Anzeige)
+
+@Suite("AppSettings — Erweitert")
+struct AppSettingsExtendedTests {
+
+    // MARK: JIRA Base URL
+
+    @Test("jiraBaseURL — leer wenn nie gesetzt")
+    func jiraBaseURLDefault() {
+        UserDefaults.standard.removeObject(forKey: AppSettings.jiraBaseURLKey)
+        #expect(AppSettings.jiraBaseURL == "")
+    }
+
+    @Test("jiraBaseURL — Round-Trip")
+    func jiraBaseURLRoundTrip() {
+        AppSettings.setJiraBaseURL("https://test.atlassian.net")
+        #expect(AppSettings.jiraBaseURL == "https://test.atlassian.net")
+        UserDefaults.standard.removeObject(forKey: AppSettings.jiraBaseURLKey)
+    }
+
+    // MARK: JIRA Projects
+
+    @Test("jiraProjects — leer wenn nie gesetzt")
+    func jiraProjectsDefault() {
+        UserDefaults.standard.removeObject(forKey: AppSettings.jiraProjectsKey)
+        #expect(AppSettings.jiraProjects.isEmpty)
+    }
+
+    @Test("jiraProjects — Encode/Decode Round-Trip")
+    func jiraProjectsRoundTrip() {
+        var p = JiraProject()
+        p.key = "PROJ"
+        p.description = "Test"
+        AppSettings.setJiraProjects([p])
+        let loaded = AppSettings.jiraProjects
+        #expect(loaded.count == 1)
+        #expect(loaded.first?.key == "PROJ")
+        UserDefaults.standard.removeObject(forKey: AppSettings.jiraProjectsKey)
+    }
+
+    // MARK: Auto-Refresh
+
+    @Test("autoRefreshEnabled — Default ist true wenn Key fehlt")
+    func autoRefreshDefault() {
+        UserDefaults.standard.removeObject(forKey: AppSettings.autoRefreshEnabledKey)
+        #expect(AppSettings.autoRefreshEnabled == AppSettings.defaultAutoRefreshEnabled)
+    }
+
+    @Test("autoRefreshEnabled — Round-Trip false")
+    func autoRefreshFalse() {
+        AppSettings.setAutoRefreshEnabled(false)
+        #expect(AppSettings.autoRefreshEnabled == false)
+        UserDefaults.standard.removeObject(forKey: AppSettings.autoRefreshEnabledKey)
+    }
+
+    @Test("autoRefreshEnabled — Round-Trip true")
+    func autoRefreshTrue() {
+        AppSettings.setAutoRefreshEnabled(true)
+        #expect(AppSettings.autoRefreshEnabled == true)
+        UserDefaults.standard.removeObject(forKey: AppSettings.autoRefreshEnabledKey)
+    }
+
+    // MARK: Remote Poll Interval
+
+    @Test("remotePollInterval — Default wenn Key fehlt")
+    func pollIntervalDefault() {
+        UserDefaults.standard.removeObject(forKey: AppSettings.remotePollIntervalKey)
+        #expect(AppSettings.remotePollInterval == AppSettings.defaultRemotePollInterval)
+    }
+
+    @Test("remotePollInterval — 0 explizit bedeutet deaktiviert")
+    func pollIntervalExplicitZero() {
+        AppSettings.setRemotePollInterval(0)
+        #expect(AppSettings.remotePollInterval == 0)
+        UserDefaults.standard.removeObject(forKey: AppSettings.remotePollIntervalKey)
+    }
+
+    @Test("remotePollInterval — gültiger Wert über Minimum")
+    func pollIntervalValid() {
+        AppSettings.setRemotePollInterval(120)
+        #expect(AppSettings.remotePollInterval == 120)
+        UserDefaults.standard.removeObject(forKey: AppSettings.remotePollIntervalKey)
+    }
+
+    @Test("remotePollInterval — unter Minimum wird auf Minimum geklemmt")
+    func pollIntervalClamped() {
+        AppSettings.setRemotePollInterval(10)
+        #expect(AppSettings.remotePollInterval == AppSettings.minimumRemotePollInterval)
+        UserDefaults.standard.removeObject(forKey: AppSettings.remotePollIntervalKey)
+    }
+
+    // MARK: showDiffLineNumbers
+
+    @Test("showDiffLineNumbers — Default ist true wenn Key fehlt")
+    func lineNumbersDefault() {
+        UserDefaults.standard.removeObject(forKey: AppSettings.showDiffLineNumbersKey)
+        #expect(AppSettings.showDiffLineNumbers == true)
+    }
+
+    @Test("showDiffLineNumbers — Round-Trip false")
+    func lineNumbersFalse() {
+        AppSettings.setShowDiffLineNumbers(false)
+        #expect(AppSettings.showDiffLineNumbers == false)
+        UserDefaults.standard.removeObject(forKey: AppSettings.showDiffLineNumbersKey)
+    }
+
+    @Test("showDiffLineNumbers — Round-Trip true")
+    func lineNumbersTrue() {
+        AppSettings.setShowDiffLineNumbers(true)
+        #expect(AppSettings.showDiffLineNumbers == true)
+        UserDefaults.standard.removeObject(forKey: AppSettings.showDiffLineNumbersKey)
+    }
+
+    // MARK: Erscheinungsbild
+
+    @Test("appearance — ungültiger rawValue ergibt Default")
+    func appearanceInvalidRaw() {
+        UserDefaults.standard.set("invalid_scheme", forKey: AppSettings.appearanceKey)
+        #expect(AppSettings.appearance == AppSettings.defaultAppearance)
+        UserDefaults.standard.removeObject(forKey: AppSettings.appearanceKey)
+    }
+
+    @Test("appearance — Round-Trip light")
+    func appearanceRoundTripLight() {
+        AppSettings.setAppearance(.light)
+        #expect(AppSettings.appearance == .light)
+        UserDefaults.standard.removeObject(forKey: AppSettings.appearanceKey)
+    }
+}
+
+// MARK: - RepositoryViewModel Einheitstests (ohne echtes git-Repository)
+
+@Suite("RepositoryViewModel — Einheit")
+@MainActor
+struct RepositoryViewModelUnitTests {
+
+    private func makeVM() -> RepositoryViewModel {
+        RepositoryViewModel(repository: RepositoryBookmark(
+            name: "test",
+            path: URL(fileURLWithPath: "/tmp/nonexistent-vm-\(UUID().uuidString)")
+        ))
+    }
+
+    // MARK: Such-State
+
+    @Test("isSearchActive ist initial false")
+    func searchActiveInitial() {
+        #expect(!makeVM().isSearchActive)
+    }
+
+    @Test("visibleGraphRows gibt graphRows zurück wenn Suche inaktiv")
+    func visibleRowsNoSearch() {
+        let vm = makeVM()
+        #expect(vm.visibleGraphRows.isEmpty)
+        #expect(vm.visibleCanLoadMore)
+    }
+
+    @Test("visibleGraphRows gibt searchGraphRows zurück bei aktiver Suche")
+    func visibleRowsWithSearch() {
+        let vm = makeVM()
+        var c = CommitSearchCriteria()
+        c.message = "fix"
+        vm.updateSearch(c)
+        #expect(vm.visibleGraphRows.isEmpty)        // searchGraphRows ist leer, aber korrekter Pfad
+        #expect(vm.visibleCanLoadMore)              // searchCanLoadMore ist initial true
+    }
+
+    @Test("updateSearch mit inaktiven Kriterien leert Such-State synchron")
+    func updateSearchInactiveClearsState() {
+        let vm = makeVM()
+        vm.updateSearch(CommitSearchCriteria())     // isActive == false
+        #expect(vm.searchResults.isEmpty)
+        #expect(vm.searchGraphRows.isEmpty)
+        #expect(!vm.isSearchActive)
+    }
+
+    @Test("updateSearch mit aktiven Kriterien setzt isSearchActive")
+    func updateSearchActiveSetsSearchActive() {
+        let vm = makeVM()
+        var c = CommitSearchCriteria()
+        c.message = "query"
+        vm.updateSearch(c)
+        #expect(vm.isSearchActive)
+    }
+
+    // MARK: selectedCommit
+
+    @Test("selectedCommit gibt nil wenn ID nicht in commits enthalten")
+    func selectedCommitIDNotFound() {
+        let vm = makeVM()
+        vm.selectedCommitID = "notexistent"
+        #expect(vm.selectedCommit == nil)
+    }
+
+    @Test("selectedCommit gibt nil bei aktiver Suche ohne Treffer")
+    func selectedCommitSearchActiveMiss() {
+        let vm = makeVM()
+        vm.selectedCommitID = "deadbeef"
+        var c = CommitSearchCriteria()
+        c.message = "query"
+        vm.updateSearch(c)
+        #expect(vm.selectedCommit == nil)
+    }
+
+    // MARK: selectCommit
+
+    @Test("selectCommit setzt branchJumpMessage wenn SHA fehlt und nicht am Laden")
+    func selectCommitMissingMessage() {
+        let vm = makeVM()
+        vm.selectCommit(bySha: "aabbccdd1122")
+        #expect(vm.branchJumpMessage != nil)
+    }
+
+    // MARK: requestBlame
+
+    @Test("requestBlame ohne ausgewählten Commit öffnet kein Sheet")
+    func requestBlameWithoutCommit() {
+        let vm = makeVM()
+        vm.requestBlame(path: "file.swift")
+        #expect(!vm.showBlameSheet)
+    }
+
+    // MARK: load / loadMore (Fehlerpfade auf nicht-existierendem Pfad)
+
+    @Test("load() auf nicht-existierendem Pfad setzt isLoading zurück")
+    func loadErrorResetsIsLoading() async {
+        let vm = makeVM()
+        await vm.load()
+        #expect(!vm.isLoading)
+    }
+
+    @Test("load() auf nicht-existierendem Pfad setzt errorMessage")
+    func loadErrorSetsMessage() async {
+        let vm = makeVM()
+        await vm.load()
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("loadMore() auf nicht-existierendem Pfad setzt isLoadingMore zurück")
+    func loadMoreErrorResetsFlag() async {
+        let vm = makeVM()
+        await vm.loadMore()
+        #expect(!vm.isLoadingMore)
+    }
+}
+
+// MARK: - DiffModels
+
+@Suite("DiffModels")
+struct DiffModelsTests {
+
+    @Test("maxLineNumber gibt 0 zurück für leere Hunks")
+    func maxLineNumberEmpty() {
+        let file = DiffFile(id: 0, oldPath: "a.swift", newPath: "a.swift",
+                            hunks: [], addedLines: 0, deletedLines: 0)
+        #expect(file.maxLineNumber == 0)
+    }
+
+    @Test("maxLineNumber gibt höchste newLineNumber zurück")
+    func maxLineNumberFromNew() {
+        let l1 = DiffLine(id: 0, type: .context,  content: "x",  oldLineNumber: 5,  newLineNumber: 5)
+        let l2 = DiffLine(id: 1, type: .addition, content: "+y", oldLineNumber: nil, newLineNumber: 12)
+        let hunk = DiffHunk(id: 0, header: "@@ -5 +5,2 @@", lines: [l1, l2])
+        let file = DiffFile(id: 0, oldPath: "a.swift", newPath: "a.swift",
+                            hunks: [hunk], addedLines: 1, deletedLines: 0)
+        #expect(file.maxLineNumber == 12)
+    }
+
+    @Test("maxLineNumber berücksichtigt oldLineNumber")
+    func maxLineNumberFromOld() {
+        let l = DiffLine(id: 0, type: .deletion, content: "-x", oldLineNumber: 20, newLineNumber: nil)
+        let hunk = DiffHunk(id: 0, header: "@@ -20 +20 @@", lines: [l])
+        let file = DiffFile(id: 0, oldPath: "a.swift", newPath: "a.swift",
+                            hunks: [hunk], addedLines: 0, deletedLines: 1)
+        #expect(file.maxLineNumber == 20)
+    }
+
+    @Test("changeType ist .modified für gleiche Pfade")
+    func changeTypeModified() {
+        let file = DiffFile(id: 0, oldPath: "file.swift", newPath: "file.swift",
+                            hunks: [], addedLines: 1, deletedLines: 0)
+        #expect(file.changeType == .modified)
+    }
+
+    @Test("displayName gibt den Pfad direkt aus wenn alt == neu")
+    func displayNameSamePaths() {
+        let file = DiffFile(id: 0, oldPath: "file.swift", newPath: "file.swift",
+                            hunks: [], addedLines: 0, deletedLines: 0)
+        #expect(file.displayName == "file.swift")
+    }
+}
+
+// MARK: - Branch und GitTag id-Eigenschaft
+
+@Suite("Branch — id-Eigenschaft")
+struct BranchIdTests {
+
+    @Test("id entspricht name")
+    func branchIdIsName() {
+        let b = Branch(name: "main", shortName: "main", isCurrent: true, isRemote: false,
+                       remoteName: nil, tipSha: "abc123",
+                       upstreamName: nil, ahead: nil, behind: nil)
+        #expect(b.id == "main")
+    }
+}
+
+@Suite("GitTag — id-Eigenschaft")
+struct GitTagIdTests {
+
+    @Test("id entspricht name")
+    func tagIdIsName() {
+        let tag = GitTag(name: "v1.2", targetSha: "deadbeef")
+        #expect(tag.id == "v1.2")
+    }
+}

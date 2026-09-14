@@ -396,6 +396,27 @@ actor GitService {
         try? await remoteName()
     }
 
+    // MARK: - Statistiken
+
+    /// Liefert Commits pro Autor über die gesamte Histoire (`git shortlog -sne --all`).
+    /// Parsing erfolgt in `RepositoryStatistics.parseShortlog`.
+    func authorCommitCounts() async throws -> [AuthorStat] {
+        let output = try await runner.runOrThrow(
+            ["shortlog", "-sne", "--all"],
+            workingDirectory: repositoryPath
+        )
+        return RepositoryStatistics.parseShortlog(output)
+    }
+
+    /// Liefert Unix-Zeitstempel aller Commits als Rohtext (ein Timestamp pro Zeile).
+    /// Parsing und Aggregation erfolgen in `RepositoryStatistics.aggregate`.
+    func commitTimestamps() async throws -> String {
+        try await runner.runOrThrow(
+            ["log", "--all", "--pretty=format:%at"],
+            workingDirectory: repositoryPath
+        )
+    }
+
     // MARK: - Lokale Repo-Statusabfragen (kein Netzwerk)
 
     /// Name des aktuell ausgecheckten Branches. nil bei detached HEAD oder Fehler.

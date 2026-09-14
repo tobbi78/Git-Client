@@ -55,6 +55,16 @@ struct Git_ClientApp: App {
         }
         .defaultSize(width: 1200, height: 780)
 
+        // Statistik-Fenster — geöffnet per openWindow(id: "repo-statistics", value: bookmark)
+        WindowGroup(id: "repo-statistics", for: RepositoryBookmark.self) { $bookmark in
+            if let repo = bookmark {
+                NavigationStack {
+                    StatisticsView(repository: repo)
+                }
+            }
+        }
+        .defaultSize(width: 900, height: 700)
+
         // Einstellungsfenster (⌘,)
         Settings {
             SettingsView()

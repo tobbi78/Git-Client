@@ -29,6 +29,8 @@ struct MainWindowView: View {
     @State private var criteria = CommitSearchCriteria()
     @State private var showAdvancedFilter = false
 
+    @Environment(\.openWindow) private var openWindow
+
     private var vm: RepositoryViewModel? { appModel.repositoryViewModel }
 
     private var subtitleText: String {
@@ -70,6 +72,12 @@ struct MainWindowView: View {
                     appModel.closeRepository()
                 }
                 .help("Zurück zur Repository-Übersicht")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Statistiken", systemImage: "chart.bar.xaxis") {
+                    openWindow(id: "repo-statistics", value: repository)
+                }
+                .help("Repository-Statistiken in einem neuen Fenster anzeigen")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Neu laden", systemImage: "arrow.clockwise") {

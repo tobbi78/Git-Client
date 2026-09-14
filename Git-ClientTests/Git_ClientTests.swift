@@ -2874,3 +2874,136 @@ struct GitServiceLocalStatusTests {
         }
     }
 }
+
+// MARK: - RepositoryStatisticsTests
+
+@Suite("RepositoryStatisticsTests")
+struct RepositoryStatisticsTests {
+
+    // MARK: parseShortlog
+
+    @Test("parseShortlog: Name und E-Mail werden korrekt getrennt")
+    func parseShortlogBasic() {
+        let output = "     5\tAlice Smith <alice@example.com>\n     3\tBob Jones <bob@example.com>\n"
+        let authors = RepositoryStatistics.parseShortlog(output)
+        #expect(authors.count == 2)
+        #expect(authors[0].name == "Alice Smith")
+        #expect(authors[0].email == "alice@example.com")
+        #expect(authors[0].commitCount == 5)
+        #expect(authors[1].name == "Bob Jones")
+        #expect(authors[1].commitCount == 3)
+    }
+
+    @Test("parseShortlog: Prozentwerte summieren sich auf 100")
+    func parseShortlogPercentageSum() {
+        let output = "     7\tA <a@x.com>\n     3\tB <b@x.com>\n"
+        let authors = RepositoryStatistics.parseShortlog(output)
+        let total = authors.reduce(0.0) { $0 + $1.percentage }
+        #expect(abs(total - 100.0) < 0.001)
+    }
+
+    @Test("parseShortlog: Leere Eingabe liefert leere Liste")
+    func parseShortlogEmpty() {
+        #expect(RepositoryStatistics.parseShortlog("").isEmpty)
+    }
+
+    @Test("parseShortlog: Autor ohne E-Mail wird akzeptiert")
+    func parseShortlogNoEmail() {
+        let output = "     2\tAlice Smith\n"
+        let authors = RepositoryStatistics.parseShortlog(output)
+        #expect(authors.count == 1)
+        #expect(authors[0].name == "Alice Smith")
+        #expect(authors[0].email == "")
+    }
+
+    @Test("parseShortlog: Absteigend nach Commit-Anzahl sortiert")
+    func parseShortlogSortOrder() {
+        let output = "     1\tC <c@x.com>\n    10\tA <a@x.com>\n     5\tB <b@x.com>\n"
+        let authors = RepositoryStatistics.parseShortlog(output)
+        #expect(authors[0].commitCount == 10)
+        #expect(authors[1].commitCount == 5)
+        #expect(authors[2].commitCount == 1)
+    }
+
+    // MARK: aggregate – Randfall: leer
+
+    @Test("aggregate: Leeres Repository liefert Null-Statistik")
+    func aggregateEmpty() {
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: "",
+            authors: [],
+            branchCount: 0,
+            tagCount: 0
+        )
+        #expect(s.totalCommits == 0)
+        #expect(s.firstCommit == nil)
+        #expect(s.lastCommit == nil)
+        #expect(s.weekday.count == 7)
+        #expect(s.hourly.count == 24)
+    }
+
+    // MARK: aggregate – einzelner Commit
+
+    @Test("aggregate: Einzelner Commit setzt first == last")
+    func aggregateSingleCommit() {
+        let ts: TimeInterval = 1_000_000_000   // 2001-09-09
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: "\(Int(ts))",
+            authors: [],
+            branchCount: 3,
+            tagCount: 2
+        )
+        #expect(s.totalCommits == 1)
+        #expect(s.firstCommit == s.lastCommit)
+        #expect(s.branchCount == 3)
+        #expect(s.tagCount == 2)
+        #expect(s.monthly.count == 1)
+        #expect(s.weekday.count == 7)
+        #expect(s.hourly.count == 24)
+        #expect(s.weekday.map(\.count).reduce(0, +) == 1)
+        #expect(s.hourly.map(\.count).reduce(0, +) == 1)
+    }
+
+    // MARK: aggregate – Monats-Buckets
+
+    @Test("aggregate: Zwei Commits in einem Monat, einer im nächsten")
+    func aggregateMonthBucketing() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var c = DateComponents()
+        c.year = 2024; c.month = 3; c.day = 15; c.hour = 12
+        let d1 = cal.date(from: c)!
+        c.day = 16
+        let d2 = cal.date(from: c)!
+        c.month = 4; c.day = 1
+        let d3 = cal.date(from: c)!
+
+        let lines = [d1, d2, d3]
+            .map { "\(Int($0.timeIntervalSince1970))" }
+            .joined(separator: "\n")
+
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: lines,
+            authors: [],
+            branchCount: 0,
+            tagCount: 0
+        )
+        #expect(s.totalCommits == 3)
+        #expect(s.monthly.count == 2)
+    }
+
+    // MARK: aggregate – Ø Commits/Woche
+
+    @Test("aggregate: Ø Commits/Woche bei 14 Tagen und 2 Commits ≈ 1,0")
+    func aggregateAverageCommitsPerWeek() {
+        let ts1: TimeInterval = 0
+        let ts2: TimeInterval = 14 * 86400
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: "\(Int(ts1))\n\(Int(ts2))",
+            authors: [],
+            branchCount: 0,
+            tagCount: 0
+        )
+        #expect(abs(s.commitsPerWeekAverage - 1.0) < 0.15)
+    }
+}

@@ -18,12 +18,18 @@ struct Git_ClientApp: App {
 
     // Explizit gespeichertes Farbschema: nie nil — onChange setzt es VOR dem nächsten
     // Render-Lauf, damit .preferredColorScheme immer einen konkreten Wert bekommt.
-    // Der @State-Initialwert wird korrekt aus UserDefaults abgeleitet, um den
-    // Kalt-Start-Flash zu vermeiden.
-    @State private var resolvedScheme: ColorScheme = Self.computeScheme(
-        UserDefaults.standard.string(forKey: AppSettings.appearanceKey)
+    // Der Initialwert darf NSApp NICHT nutzen (noch nil beim App-Start) — für
+    // "Wie System" wird stattdessen der System-UserDefaults-Schlüssel gelesen.
+    @State private var resolvedScheme: ColorScheme = {
+        let raw = UserDefaults.standard.string(forKey: AppSettings.appearanceKey)
             ?? AppSettings.defaultAppearance.rawValue
-    )
+        if let scheme = AppAppearance(rawValue: raw)?.colorScheme {
+            return scheme
+        }
+        // System: AppleInterfaceStyle == "Dark" → Dunkel, sonst Hell
+        return UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+            ? .dark : .light
+    }()
 
     var body: some Scene {
         WindowGroup {

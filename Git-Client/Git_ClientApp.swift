@@ -16,6 +16,15 @@ struct Git_ClientApp: App {
     @State private var appModel = AppModel()
     @AppStorage(AppSettings.appearanceKey) private var appearanceRaw = AppSettings.defaultAppearance.rawValue
 
+    // Explizit gespeichertes Farbschema: nie nil — onChange setzt es VOR dem nächsten
+    // Render-Lauf, damit .preferredColorScheme immer einen konkreten Wert bekommt.
+    // Der @State-Initialwert wird korrekt aus UserDefaults abgeleitet, um den
+    // Kalt-Start-Flash zu vermeiden.
+    @State private var resolvedScheme: ColorScheme = Self.computeScheme(
+        UserDefaults.standard.string(forKey: AppSettings.appearanceKey)
+            ?? AppSettings.defaultAppearance.rawValue
+    )
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -26,18 +35,16 @@ struct Git_ClientApp: App {
                 }
             }
             .environment(appModel)
-            // Immer einen konkreten Wert übergeben (nie nil): SwiftUI wendet nil nicht
-            // zuverlässig zurück auf das System-Schema an. Für "Wie System" lesen wir
-            // NSApp.effectiveAppearance — das ist bereits korrekt, weil onChange (s.u.)
-            // NSApplication.shared.appearance VOR dieser body-Auswertung auf nil setzt.
-            .preferredColorScheme(effectiveColorScheme)
+            .preferredColorScheme(resolvedScheme)
             .task {
                 applyNSAppearance(appearanceRaw)
+                resolvedScheme = Self.computeScheme(appearanceRaw)
             }
             .onChange(of: appearanceRaw) { _, newRaw in
-                // NSAppearance VOR dem nächsten body-Lauf setzen, damit effectiveColorScheme
-                // beim Re-Render bereits den richtigen Wert von NSApp.effectiveAppearance liest.
+                // applyNSAppearance VOR computeScheme: NSApp.effectiveAppearance
+                // spiegelt nach dem Setzen von NSApp.appearance sofort den neuen Wert.
                 applyNSAppearance(newRaw)
+                resolvedScheme = Self.computeScheme(newRaw)
             }
         }
         .defaultSize(width: 1200, height: 780)
@@ -48,11 +55,10 @@ struct Git_ClientApp: App {
         }
     }
 
-    /// Effektives Farbschema: für feste Einstellungen (hell/dunkel) direkt; für
-    /// "Wie System" aus NSApp.effectiveAppearance abgeleitet — nie nil, damit
-    /// SwiftUI stets einen konkreten Wert in die Umgebung schreibt.
-    private var effectiveColorScheme: ColorScheme {
-        if let scheme = AppAppearance(rawValue: appearanceRaw)?.colorScheme {
+    /// Leitet den ColorScheme-Wert aus dem rawValue ab. Für „Wie System" wird
+    /// NSApp.effectiveAppearance herangezogen — nach applyNSAppearance bereits korrekt.
+    private static func computeScheme(_ raw: String) -> ColorScheme {
+        if let scheme = AppAppearance(rawValue: raw)?.colorScheme {
             return scheme
         }
         return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua

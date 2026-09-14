@@ -75,6 +75,23 @@ struct StatisticsView: View {
                     kpiTile("Letzter Commit",
                             value: last.formatted(date: .abbreviated, time: .omitted))
                 }
+                if s.busFactor > 0 {
+                    kpiTile("Bus Factor", value: "\(s.busFactor)")
+                }
+                if s.averageDaysBetweenCommits > 0 {
+                    kpiTile("Ø Tage/Commit",
+                            value: String(format: "%.1f", s.averageDaysBetweenCommits))
+                }
+                if s.longestStreakDays > 0 {
+                    kpiTile("Längste Streak", value: "\(s.longestStreakDays) Tage")
+                }
+                if let m = s.mostActiveMonth {
+                    let label = m.date.formatted(.dateTime.year().month(.abbreviated))
+                    kpiTile("Aktivster Monat", value: label)
+                }
+                if let wd = s.mostActiveWeekday {
+                    kpiTile("Aktivster Wochentag", value: weekdayLabels[wd.weekday - 1])
+                }
             }
         }
     }

@@ -45,6 +45,19 @@ struct RepositoryStatistics: Equatable, Sendable {
     let weekday: [DayCount]       // Mo–So, immer 7 Einträge
     let hourly: [HourCount]       // 0–23, immer 24 Einträge
 
+    // MARK: Abgeleitete KPIs (kein zusätzlicher git-Aufruf)
+
+    /// Minimale Anzahl Autoren, die zusammen ≥ 80 % der Commits verantworten.
+    let busFactor: Int
+    /// Durchschnittliche Anzahl Tage zwischen zwei Commits (Zeitspanne / (n−1)).
+    let averageDaysBetweenCommits: Double
+    /// Längste ununterbrochene Folge von Kalendertagen mit mindestens einem Commit.
+    let longestStreakDays: Int
+    /// Monat mit den meisten Commits.
+    let mostActiveMonth: PeriodCount?
+    /// Wochentag (ISO: 1=Mo…7=So) mit den meisten Commits.
+    let mostActiveWeekday: DayCount?
+
     var activeSpan: String {
         guard let first = firstCommit, let last = lastCommit else { return "–" }
         let days = Int(last.timeIntervalSince(first) / 86400)
@@ -59,6 +72,44 @@ struct RepositoryStatistics: Equatable, Sendable {
 // MARK: - Parsing & Aggregation
 
 extension RepositoryStatistics {
+
+    /// Minimale Autorenanzahl, die zusammen ≥ `threshold` % der Commits abdeckt.
+    /// Autoren müssen **absteigend nach Commit-Anzahl** sortiert sein.
+    /// Gibt 0 zurück, wenn die Liste leer ist.
+    nonisolated static func computeBusFactor(
+        _ authors: [AuthorStat],
+        threshold: Double = 80
+    ) -> Int {
+        guard !authors.isEmpty else { return 0 }
+        var cumulative = 0.0
+        for (i, author) in authors.enumerated() {
+            cumulative += author.percentage
+            if cumulative >= threshold { return i + 1 }
+        }
+        return authors.count
+    }
+
+    /// Längste Folge aufeinanderfolgender Kalendertage mit ≥ 1 Commit.
+    /// Mehrere Commits am selben Tag werden als ein Aktivitätstag gewertet.
+    nonisolated static func longestDailyStreak(_ dates: [Date], calendar: Calendar) -> Int {
+        guard !dates.isEmpty else { return 0 }
+        // Deduplizieren auf Tagesebene (Mitternacht des jeweiligen Tages)
+        let uniqueDays = Array(Set(dates.map { calendar.startOfDay(for: $0) })).sorted()
+        guard uniqueDays.count > 1 else { return 1 }
+
+        var longest = 1
+        var current = 1
+        for i in 1..<uniqueDays.count {
+            let diff = calendar.dateComponents([.day], from: uniqueDays[i - 1], to: uniqueDays[i]).day ?? 0
+            if diff == 1 {
+                current += 1
+                longest = max(longest, current)
+            } else {
+                current = 1
+            }
+        }
+        return longest
+    }
 
     /// Parst die Ausgabe von `git shortlog -sne --all`.
     /// Format pro Zeile: `"   <n>\t<Name> <email>"` (die Anzahl ist rechts mit Leerzeichen aufgefüllt).
@@ -125,7 +176,12 @@ extension RepositoryStatistics {
                 authors: authors,
                 monthly: [],
                 weekday: (1...7).map { DayCount(weekday: $0, count: 0) },
-                hourly:  (0...23).map { HourCount(hour: $0, count: 0) }
+                hourly:  (0...23).map { HourCount(hour: $0, count: 0) },
+                busFactor: 0,
+                averageDaysBetweenCommits: 0,
+                longestStreakDays: 0,
+                mostActiveMonth: nil,
+                mostActiveWeekday: nil
             )
         }
 
@@ -176,6 +232,17 @@ extension RepositoryStatistics {
         }
         let hourly = (0...23).map { HourCount(hour: $0, count: hourBuckets[$0] ?? 0) }
 
+        // Abgeleitete KPIs (kein zusätzlicher git-Aufruf)
+        let busFactor  = Self.computeBusFactor(authors)
+        let avgDays    = dates.count > 1
+            ? last.timeIntervalSince(first) / 86400 / Double(dates.count - 1)
+            : 0
+        let streak     = Self.longestDailyStreak(dates, calendar: cal)
+        let topMonth   = monthly.max { $0.count < $1.count }
+        let topWeekday = weekday.allSatisfy { $0.count == 0 }
+            ? nil
+            : weekday.max { $0.count < $1.count }
+
         return RepositoryStatistics(
             totalCommits: dates.count,
             authorCount: authors.count,
@@ -187,7 +254,12 @@ extension RepositoryStatistics {
             authors: authors,
             monthly: monthly,
             weekday: weekday,
-            hourly: hourly
+            hourly: hourly,
+            busFactor: busFactor,
+            averageDaysBetweenCommits: avgDays,
+            longestStreakDays: streak,
+            mostActiveMonth: topMonth,
+            mostActiveWeekday: topWeekday
         )
     }
 }

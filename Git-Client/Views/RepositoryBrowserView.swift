@@ -183,6 +183,9 @@ private struct BookmarkNodeView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if pathExists, let st = appModel.repoStatus[repo.id] {
+                    repoStatusRow(st)
+                }
             }
             Spacer()
             // Auto-Refresh-Badge: neue Commits vorhanden
@@ -228,6 +231,48 @@ private struct BookmarkNodeView: View {
         .onTapGesture { if pathExists { appModel.openRepository(repo) } }
         .draggable(node.id.uuidString)
         .contextMenu { repoContextMenu(node: node, repo: repo, pathExists: pathExists) }
+    }
+
+    // MARK: - Repository-Statuszeile
+
+    @ViewBuilder
+    private func repoStatusRow(_ st: RepoStatus) -> some View {
+        HStack(spacing: 5) {
+            if let branch = st.currentBranch {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 9))
+                Text(branch)
+                    .font(.system(size: 10))
+                    .lineLimit(1)
+            }
+            if st.isBehind {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 9, weight: .medium))
+                Text("\(st.behindCount)")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .help("\(st.behindCount) Commits auf dem Server")
+            }
+            if st.aheadCount > 0 {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 9))
+                Text("\(st.aheadCount)")
+                    .font(.system(size: 10))
+                    .help("\(st.aheadCount) lokale Commits noch nicht gepusht")
+            }
+            if st.hasUncommittedChanges {
+                Image(systemName: "pencil.circle")
+                    .font(.system(size: 9))
+                    .help("Lokale Änderungen")
+            }
+            if let date = st.lastCommitDate {
+                Spacer()
+                Text(RepoStatus.relativeLabel(from: date))
+                    .font(.system(size: 10))
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(.secondary)
     }
 
     // MARK: - Ordner-Sektion

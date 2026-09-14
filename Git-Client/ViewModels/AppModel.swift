@@ -21,6 +21,9 @@ final class AppModel {
     /// Von RepositoryBrowserView (Badge) und MainWindowView (Banner) beobachtet.
     private(set) var newCommitStatus: [UUID: RepoNewCommits] = [:]
 
+    /// Lokale Kennzahlen pro Repository-ID für die Übersichtsliste.
+    private(set) var repoStatus: [UUID: RepoStatus] = [:]
+
     /// Session-Baseline: Ref-Signatur zum Zeitpunkt der letzten „Gesehen"-Markierung.
     private var localBaseline: [UUID: [String: String]] = [:]
 
@@ -177,13 +180,16 @@ final class AppModel {
             monitoringServices[repo.id] = GitService(repositoryPath: repo.path)
         }
 
-        // Baselines asynchron setzen (beim ersten Start)
+        // Baselines und lokale Kennzahlen asynchron setzen (beim ersten Start)
         let reposForBaseline = repos
         Task {
             for repo in reposForBaseline {
                 guard localBaseline[repo.id] == nil else { continue }
                 let sig = await monitoringServices[repo.id]?.localRefSignature() ?? [:]
                 localBaseline[repo.id] = sig
+                if let service = monitoringServices[repo.id] {
+                    await refreshLocalStatus(repoID: repo.id, service: service)
+                }
             }
         }
 
@@ -205,6 +211,7 @@ final class AppModel {
                     var status = self.newCommitStatus[repoID] ?? RepoNewCommits()
                     status.hasLocalChanges = (newSig != baseline)
                     self.newCommitStatus[repoID] = status
+                    await self.refreshLocalStatus(repoID: repoID, service: service)
                 }
             }
         }
@@ -222,6 +229,21 @@ final class AppModel {
         }
     }
 
+    private func refreshLocalStatus(repoID: UUID, service: GitService) async {
+        var st = repoStatus[repoID] ?? RepoStatus()
+        st.currentBranch = await service.currentBranch()
+        st.hasUncommittedChanges = await service.hasUncommittedChanges()
+        st.lastCommitDate = await service.lastCommitDate()
+        if let ab = try? await service.aheadBehind() {
+            st.hasUpstream = true
+            st.aheadCount = ab.ahead
+            st.behindCount = ab.behind
+        } else {
+            st.hasUpstream = false
+        }
+        repoStatus[repoID] = st
+    }
+
     private func pollRemotes(repos: [RepositoryBookmark]) async {
         for repo in repos {
             guard !Task.isCancelled else { break }
@@ -230,22 +252,16 @@ final class AppModel {
 
             let password = KeychainStore.load(for: repo.id)
             do {
-                let remoteHeads = try await service.remoteHeads(
-                    remoteURL: remoteURL,
-                    username: repo.username,
-                    password: password
-                )
-                let localSig = await service.localRefSignature()
-                let remoteName = await service.firstRemoteName() ?? "origin"
-                let aheadCount = RepoRefSnapshot.remoteAhead(
-                    localSignature: localSig,
-                    remoteHeads: remoteHeads,
-                    remoteName: remoteName
-                )
-                await MainActor.run {
-                    var status = newCommitStatus[repo.id] ?? RepoNewCommits()
-                    status.remoteAheadBranches = aheadCount
-                    newCommitStatus[repo.id] = status
+                try await service.fetch(remoteURL: remoteURL, username: repo.username, password: password)
+                if let ab = try? await service.aheadBehind() {
+                    var st = repoStatus[repo.id] ?? RepoStatus()
+                    st.hasUpstream = true
+                    st.aheadCount = ab.ahead
+                    st.behindCount = ab.behind
+                    repoStatus[repo.id] = st
+                    var news = newCommitStatus[repo.id] ?? RepoNewCommits()
+                    news.remoteAheadBranches = ab.behind > 0 ? 1 : 0
+                    newCommitStatus[repo.id] = news
                 }
             } catch {
                 // Offline, fehlende Credentials etc. — still ignorieren

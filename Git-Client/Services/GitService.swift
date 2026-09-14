@@ -395,4 +395,30 @@ actor GitService {
     func firstRemoteName() async -> String? {
         try? await remoteName()
     }
+
+    // MARK: - Lokale Repo-Statusabfragen (kein Netzwerk)
+
+    /// Name des aktuell ausgecheckten Branches. nil bei detached HEAD oder Fehler.
+    func currentBranch() async -> String? {
+        guard let out = try? await runner.runOrThrow(
+            ["rev-parse", "--abbrev-ref", "HEAD"],
+            workingDirectory: repositoryPath
+        ) else { return nil }
+        let name = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (name.isEmpty || name == "HEAD") ? nil : name
+    }
+
+    /// true, wenn das Arbeitsverzeichnis uncommittete Änderungen hat.
+    func hasUncommittedChanges() async -> Bool {
+        guard let out = try? await runner.runOrThrow(
+            ["status", "--porcelain"],
+            workingDirectory: repositoryPath
+        ) else { return false }
+        return RepoStatus.parsePorcelainDirty(out)
+    }
+
+    /// Datum des neuesten lokalen Commits (HEAD). nil bei leerem Repo oder Fehler.
+    func lastCommitDate() async -> Date? {
+        await loadSingleCommit(sha: "HEAD")?.date
+    }
 }

@@ -2736,3 +2736,126 @@ struct GitTagIdTests {
         #expect(tag.id == "v1.2")
     }
 }
+
+// MARK: - RepoStatus (reine Helfer)
+
+@Suite("RepoStatus — Helfer")
+struct RepoStatusTests {
+
+    // parsePorcelainDirty
+
+    @Test("Leere Ausgabe → nicht dirty")
+    func emptyOutputNotDirty() {
+        #expect(!RepoStatus.parsePorcelainDirty(""))
+    }
+
+    @Test("Nur Whitespace → nicht dirty")
+    func whitespaceNotDirty() {
+        #expect(!RepoStatus.parsePorcelainDirty("  \n  "))
+    }
+
+    @Test("Porcelain-Zeile → dirty")
+    func modifiedFileDirty() {
+        #expect(RepoStatus.parsePorcelainDirty(" M Sources/Foo.swift"))
+    }
+
+    @Test("Untracked-Zeile → dirty")
+    func untrackedFileDirty() {
+        #expect(RepoStatus.parsePorcelainDirty("?? NewFile.swift"))
+    }
+
+    // relativeLabel
+
+    @Test("Liefert nicht-leeren String für vergangenes Datum")
+    func relativeLabelNonEmpty() {
+        let past = Date(timeIntervalSinceNow: -3600)
+        let label = RepoStatus.relativeLabel(from: past)
+        #expect(!label.isEmpty)
+    }
+
+    @Test("Referenzdatum now wird berücksichtigt")
+    func relativeLabelUsesNowParameter() {
+        let anchor = Date(timeIntervalSince1970: 0)
+        let now    = Date(timeIntervalSince1970: 7200)
+        let label  = RepoStatus.relativeLabel(from: anchor, to: now)
+        #expect(!label.isEmpty)
+    }
+
+    // isBehind
+
+    @Test("isBehind false ohne Upstream")
+    func isBehindFalseWithoutUpstream() {
+        var st = RepoStatus()
+        st.hasUpstream = false
+        st.behindCount = 5
+        #expect(!st.isBehind)
+    }
+
+    @Test("isBehind false mit Upstream aber behindCount 0")
+    func isBehindFalseWhenZero() {
+        var st = RepoStatus()
+        st.hasUpstream = true
+        st.behindCount = 0
+        #expect(!st.isBehind)
+    }
+
+    @Test("isBehind true mit Upstream und behindCount > 0")
+    func isBehindTrueWhenUpstreamAndPositive() {
+        var st = RepoStatus()
+        st.hasUpstream = true
+        st.behindCount = 3
+        #expect(st.isBehind)
+    }
+}
+
+// MARK: - GitService — lokale Statusabfragen (Integration)
+
+@Suite("GitService — lokale Statusabfragen")
+struct GitServiceLocalStatusTests {
+
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("status-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "T")
+        let f = repoURL.appendingPathComponent("init.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+    }
+
+    @Test("currentBranch liefert 'main'")
+    func currentBranchIsMain() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let branch = await svc.currentBranch()
+        #expect(branch == "main")
+    }
+
+    @Test("hasUncommittedChanges false nach sauberem Commit")
+    func noUncommittedChangesAfterCommit() async {
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.hasUncommittedChanges() == false)
+    }
+
+    @Test("hasUncommittedChanges true nach Dateiänderung")
+    func uncommittedChangesAfterModification() async throws {
+        let f = repoURL.appendingPathComponent("modified.txt")
+        try "changed".write(to: f, atomically: true, encoding: .utf8)
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.hasUncommittedChanges() == true)
+    }
+
+    @Test("lastCommitDate ist nicht nil und nahe jetzt")
+    func lastCommitDateNearNow() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let date = await svc.lastCommitDate()
+        #expect(date != nil)
+        if let d = date {
+            #expect(abs(d.timeIntervalSinceNow) < 60)
+        }
+    }
+}

@@ -140,10 +140,10 @@ private func gitFolderWatcherCallback(
     guard let info = clientCallBackInfo else { return }
     let watcher = Unmanaged<GitFolderWatcher>.fromOpaque(info).takeUnretainedValue()
 
-    // CFArray mit Pfad-Strings auslesen
-    guard let cfPaths = eventPaths.assumingMemoryBound(to: CFArray.self).pointee as? [String] else {
-        return
-    }
+    // eventPaths *ist* das CFArray (kFSEventStreamCreateFlagUseCFTypes);
+    // über Unmanaged korrekt als Swift-Array bridgen.
+    let cfArray = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue()
+    guard let cfPaths = cfArray as? [String] else { return }
 
     watcher.handleEvents(paths: cfPaths)
 }

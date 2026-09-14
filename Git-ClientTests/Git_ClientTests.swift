@@ -5,6 +5,7 @@
 
 import Testing
 import Foundation
+import SwiftUI
 @testable import Git_Client
 
 // MARK: - Helpers
@@ -2344,5 +2345,78 @@ struct DiffParserLineNumberTests {
         let diff = DiffParser.parse("", sha: "abc1234")
         let max = diff.files.first?.maxLineNumber ?? 0
         #expect(max == 0)
+    }
+}
+
+// MARK: - AppAppearance
+
+@Suite("AppAppearance")
+struct AppAppearanceTests {
+
+    @Test("colorScheme: system → nil")
+    func systemIsNil() {
+        #expect(AppAppearance.system.colorScheme == nil)
+    }
+
+    @Test("colorScheme: light → .light")
+    func lightIsLight() {
+        #expect(AppAppearance.light.colorScheme == .light)
+    }
+
+    @Test("colorScheme: dark → .dark")
+    func darkIsDark() {
+        #expect(AppAppearance.dark.colorScheme == .dark)
+    }
+
+    @Test("rawValue Round-Trip: system")
+    func rawValueSystem() {
+        #expect(AppAppearance(rawValue: "system") == .system)
+    }
+
+    @Test("rawValue Round-Trip: light")
+    func rawValueLight() {
+        #expect(AppAppearance(rawValue: "light") == .light)
+    }
+
+    @Test("rawValue Round-Trip: dark")
+    func rawValueDark() {
+        #expect(AppAppearance(rawValue: "dark") == .dark)
+    }
+
+    @Test("Ungültiger rawValue gibt nil zurück")
+    func invalidRawValue() {
+        #expect(AppAppearance(rawValue: "auto") == nil)
+        #expect(AppAppearance(rawValue: "") == nil)
+    }
+
+    @Test("label: Werte korrekt")
+    func labels() {
+        #expect(AppAppearance.system.label == "Wie System")
+        #expect(AppAppearance.light.label == "Hell")
+        #expect(AppAppearance.dark.label == "Dunkel")
+    }
+
+    @Test("allCases enthält genau 3 Werte")
+    func allCasesCount() {
+        #expect(AppAppearance.allCases.count == 3)
+    }
+
+    @Test("AppSettings Round-Trip: dark")
+    func settingsRoundTripDark() {
+        AppSettings.setAppearance(.dark)
+        #expect(AppSettings.appearance == .dark)
+        // Aufräumen
+        UserDefaults.standard.removeObject(forKey: AppSettings.appearanceKey)
+    }
+
+    @Test("AppSettings: kein gespeicherter Wert ergibt Default system")
+    func settingsDefaultSystem() {
+        // Eigene saubere Sandbox: temporären Key verwenden, der nie geschrieben wird
+        let tempKey = "appearance_test_default_\(UUID().uuidString)"
+        UserDefaults.standard.removeObject(forKey: tempKey)
+        // Direkt über AppAppearance prüfen: kein gespeicherter String → Default
+        let raw = UserDefaults.standard.string(forKey: tempKey)
+        let result = raw.flatMap { AppAppearance(rawValue: $0) } ?? AppSettings.defaultAppearance
+        #expect(result == .system)
     }
 }

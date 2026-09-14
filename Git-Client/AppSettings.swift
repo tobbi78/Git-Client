@@ -128,4 +128,23 @@ enum AppSettings {
     static func setShowDiffLineNumbers(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: showDiffLineNumbersKey)
     }
+
+    // MARK: - Erscheinungsbild
+
+    /// UserDefaults-Schlüssel: Erscheinungsbild (rawValue von AppAppearance).
+    static let appearanceKey = "appearance"
+
+    /// Standardwert: dem System folgen.
+    static let defaultAppearance: AppAppearance = .system
+
+    /// Aktuell gewähltes Erscheinungsbild.
+    static var appearance: AppAppearance {
+        guard let raw = UserDefaults.standard.string(forKey: appearanceKey),
+              let value = AppAppearance(rawValue: raw) else { return defaultAppearance }
+        return value
+    }
+
+    static func setAppearance(_ appearance: AppAppearance) {
+        UserDefaults.standard.set(appearance.rawValue, forKey: appearanceKey)
+    }
 }

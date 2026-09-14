@@ -14,6 +14,7 @@ import SwiftUI
 @main
 struct Git_ClientApp: App {
     @State private var appModel = AppModel()
+    @AppStorage(AppSettings.appearanceKey) private var appearanceRaw = AppSettings.defaultAppearance.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -25,6 +26,7 @@ struct Git_ClientApp: App {
                 }
             }
             .environment(appModel)
+            .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
         }
         .defaultSize(width: 1200, height: 780)
 

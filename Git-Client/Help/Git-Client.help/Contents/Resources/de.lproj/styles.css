@@ -139,6 +139,31 @@ pre code {
 .tip    { background: var(--tip-bg);  border-color: var(--tip-bdr);  }
 .note strong, .tip strong { display: block; margin-bottom: 4px; }
 
+/* ── Seiteninternes Inhaltsverzeichnis ───────────────────── */
+
+nav.page-toc {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 20px 0 36px;
+    display: inline-block;
+    min-width: 200px;
+}
+nav.page-toc p {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--fg-ter);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 8px;
+}
+nav.page-toc ol {
+    margin: 0;
+    padding-left: 1.4rem;
+}
+nav.page-toc li { margin-bottom: 4px; font-size: 0.9rem; }
+
 /* ── Inhaltsverzeichnis (Index-Seite) ───────────────────── */
 
 .toc-grid {

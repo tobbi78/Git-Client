@@ -26,14 +26,17 @@ struct Git_ClientApp: App {
                 }
             }
             .environment(appModel)
-            .preferredColorScheme(AppAppearance(rawValue: appearanceRaw)?.colorScheme)
+            // Immer einen konkreten Wert übergeben (nie nil): SwiftUI wendet nil nicht
+            // zuverlässig zurück auf das System-Schema an. Für "Wie System" lesen wir
+            // NSApp.effectiveAppearance — das ist bereits korrekt, weil onChange (s.u.)
+            // NSApplication.shared.appearance VOR dieser body-Auswertung auf nil setzt.
+            .preferredColorScheme(effectiveColorScheme)
             .task {
-                // Beim ersten Erscheinen NSAppearance synchronisieren, damit semantische
-                // NSColor-Werte (z.B. .labelColor) sofort korrekt auflösen.
                 applyNSAppearance(appearanceRaw)
             }
             .onChange(of: appearanceRaw) { _, newRaw in
-                // Bei jedem Erscheinungsbild-Wechsel AppKit konsistent halten.
+                // NSAppearance VOR dem nächsten body-Lauf setzen, damit effectiveColorScheme
+                // beim Re-Render bereits den richtigen Wert von NSApp.effectiveAppearance liest.
                 applyNSAppearance(newRaw)
             }
         }
@@ -45,11 +48,19 @@ struct Git_ClientApp: App {
         }
     }
 
+    /// Effektives Farbschema: für feste Einstellungen (hell/dunkel) direkt; für
+    /// "Wie System" aus NSApp.effectiveAppearance abgeleitet — nie nil, damit
+    /// SwiftUI stets einen konkreten Wert in die Umgebung schreibt.
+    private var effectiveColorScheme: ColorScheme {
+        if let scheme = AppAppearance(rawValue: appearanceRaw)?.colorScheme {
+            return scheme
+        }
+        return NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .dark : .light
+    }
+
     /// Setzt NSApplication- und Fenster-Appearance, damit AppKit-Farben
     /// (Color(nsColor:)) sofort und ohne Fokus-Wechsel korrekt auflösen.
-    /// NSApplication allein propagiert Änderungen zu Fenstern erst beim
-    /// nächsten becomeKey/resignKey-Event — das explizite window.appearance
-    /// löst viewDidChangeEffectiveAppearance sofort aus.
     private func applyNSAppearance(_ raw: String) {
         let nsAppearance = AppAppearance(rawValue: raw)?.nsAppearance
         NSApplication.shared.appearance = nsAppearance

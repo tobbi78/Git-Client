@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var draftAutoRefreshEnabled: Bool = true
     @State private var draftPollIntervalText: String = ""
     @State private var draftShowLineNumbers: Bool = true
+    @State private var draftAppearance: AppAppearance = .system
 
     // MARK: UI-Hilfszustand
     @State private var showMinWarning = false
@@ -55,6 +56,7 @@ struct SettingsView: View {
         || draftAutoRefreshEnabled != AppSettings.autoRefreshEnabled
         || parsedPollInterval != AppSettings.remotePollInterval
         || draftShowLineNumbers != AppSettings.showDiffLineNumbers
+        || draftAppearance != AppSettings.appearance
     }
 
     // MARK: - Body
@@ -259,6 +261,20 @@ struct SettingsView: View {
     private var displayTab: some View {
         Form {
             Section {
+                Picker("Erscheinungsbild", selection: $draftAppearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.label).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("Legt fest, ob die App im hellen oder dunklen Design erscheint oder dem System folgt. Die Änderung greift sofort nach dem Speichern.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Erscheinungsbild")
+            }
+
+            Section {
                 Toggle("Zeilennummern im Diff anzeigen", isOn: $draftShowLineNumbers)
                 Text("Zeigt links neben jeder Patch-Zeile die Original- (alt) und neue Zeilennummer an. Entspricht der Ansicht in Sourcetree oder GitHub.")
                     .font(.caption)
@@ -321,6 +337,7 @@ struct SettingsView: View {
         draftAutoRefreshEnabled = AppSettings.autoRefreshEnabled
         draftPollIntervalText   = "\(AppSettings.remotePollInterval)"
         draftShowLineNumbers    = AppSettings.showDiffLineNumbers
+        draftAppearance         = AppSettings.appearance
     }
 
     private func saveAndClose() {
@@ -361,6 +378,7 @@ struct SettingsView: View {
 
         // Anzeige
         AppSettings.setShowDiffLineNumbers(draftShowLineNumbers)
+        AppSettings.setAppearance(draftAppearance)
 
         syncDraftFromSettings()
         dismiss()

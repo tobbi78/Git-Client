@@ -19,6 +19,76 @@
 </h1>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="v1_2">Version 1.2</h2>
+
+<h3>Neu: Commit-Suche &amp; Filter</h3>
+<p>
+    Die Commit-Liste lässt sich jetzt durchsuchen und filtern — nach
+    <strong>Nachricht</strong>, <strong>Autor</strong> oder <strong>Zeitraum</strong>
+    (Von/Bis mit Uhrzeit). Die Eingabe wird entprellt, sodass die Suche auch in großen
+    Repositories flüssig bleibt.
+</p>
+
+<h3>Neu: Erweiterte Dateiliste pro Commit</h3>
+<p>
+    Zu jedem Commit zeigt die Dateiliste nun den <strong>Änderungstyp</strong>
+    (hinzugefügt, geändert, gelöscht) als Symbol sowie die
+    <strong>+/−-Zeilenstatistik</strong>. Ein Klick auf eine Datei springt direkt zum Diff.
+</p>
+
+<h3>Neu: Ahead/Behind-Anzeige pro Branch</h3>
+<p>
+    In der Seitenleiste zeigen Badges an, wie viele Commits ein Branch
+    <strong>vor</strong> bzw. <strong>hinter</strong> seinem Remote liegt.
+</p>
+
+<h3>Neu: JIRA-Verknüpfung</h3>
+<p>
+    Ticket-Keys wie <code>PROJ-123</code> in Commit-Nachrichten werden erkannt und als
+    klickbare Links dargestellt. Server-URL und Projekt-Keys werden unter
+    <strong>Einstellungen › JIRA</strong> konfiguriert.
+</p>
+
+<h3>Neu: Blame-Ansicht</h3>
+<p>
+    Per Rechtsklick auf eine Datei im Commit-Detail lässt sich anzeigen, wer welche Zeile
+    zuletzt geändert hat — inklusive Commit und Autor je Zeile.
+</p>
+
+<h3>Neu: Automatische Erkennung neuer Commits</h3>
+<p>
+    Git-Client beobachtet Repositories im Hintergrund (FSEvents lokal) und fragt den Server
+    periodisch per <code>git ls-remote</code> ab — <strong>ohne Download</strong>. Neue
+    Commits erscheinen als Badge in der Übersicht und als Hinweis-Banner im geöffneten
+    Repository. Intervall und Aktivierung unter <strong>Einstellungen › Aktualisierung</strong>.
+</p>
+
+<h3>Neu: Zeilennummern im Diff</h3>
+<p>
+    Der Diff-Patch kann links neben jeder Zeile die alte und neue Zeilennummer anzeigen —
+    wie in Sourcetree oder GitHub. Umschaltbar unter <strong>Einstellungen › Anzeige</strong>.
+</p>
+
+<h3>Neu: Erscheinungsbild wählbar</h3>
+<p>
+    Das Design lässt sich auf <strong>Hell</strong>, <strong>Dunkel</strong> oder
+    <strong>Wie System</strong> einstellen (<strong>Einstellungen › Anzeige</strong>). Die
+    Änderung greift sofort ohne Neustart.
+</p>
+
+<h3>Fehlerbehebungen</h3>
+<ul>
+    <li>Absturz (EXC_BAD_ACCESS) im Hintergrund-Watcher behoben: der FSEvent-Callback hat den
+        CFArray-Pointer falsch interpretiert und dabei in ungültigen Speicher gelesen.</li>
+</ul>
+
+<h3>Sonstiges</h3>
+<ul>
+    <li>Über-Dialog um Copyright und Credits erweitert.</li>
+    <li>Git-Client bleibt ein reiner Lese-Client: keinerlei schreibende Git-Operationen.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="v1_1">Version 1.1</h2>
 
 <h3>Neu: Lazy Loading der Commit-Liste</h3>

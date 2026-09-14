@@ -3006,4 +3006,139 @@ struct RepositoryStatisticsTests {
         )
         #expect(abs(s.commitsPerWeekAverage - 1.0) < 0.15)
     }
+
+    // MARK: computeBusFactor
+
+    @Test("computeBusFactor: Leere Liste liefert 0")
+    func busFactorEmpty() {
+        #expect(RepositoryStatistics.computeBusFactor([]) == 0)
+    }
+
+    @Test("computeBusFactor: Ein Autor mit 100 % liefert 1")
+    func busFactorSingleAuthor() {
+        let a = AuthorStat(name: "Alice", email: "a@x.com", commitCount: 10, percentage: 100)
+        #expect(RepositoryStatistics.computeBusFactor([a]) == 1)
+    }
+
+    @Test("computeBusFactor: Zwei gleichstarke Autoren → Schwelle bei 80 % erfordert beide")
+    func busFactorTwoEqual() {
+        let a = AuthorStat(name: "A", email: "a@x.com", commitCount: 5, percentage: 50)
+        let b = AuthorStat(name: "B", email: "b@x.com", commitCount: 5, percentage: 50)
+        // 50 < 80 → nach erstem Autor noch nicht erreicht; 50+50=100 ≥ 80 → 2 Autoren
+        #expect(RepositoryStatistics.computeBusFactor([a, b]) == 2)
+    }
+
+    @Test("computeBusFactor: Erster Autor überschreitet Schwelle allein")
+    func busFactorFirstExceedsThreshold() {
+        let a = AuthorStat(name: "A", email: "a@x.com", commitCount: 90, percentage: 90)
+        let b = AuthorStat(name: "B", email: "b@x.com", commitCount: 10, percentage: 10)
+        #expect(RepositoryStatistics.computeBusFactor([a, b]) == 1)
+    }
+
+    @Test("computeBusFactor: Schwelle exakt getroffen zählt")
+    func busFactorExactThreshold() {
+        // Autor 1: 40 %, Autor 2: 40 % → kumuliert 80 % nach Autor 2 → Bus Factor 2
+        let a = AuthorStat(name: "A", email: "a@x.com", commitCount: 4, percentage: 40)
+        let b = AuthorStat(name: "B", email: "b@x.com", commitCount: 4, percentage: 40)
+        let c = AuthorStat(name: "C", email: "c@x.com", commitCount: 2, percentage: 20)
+        #expect(RepositoryStatistics.computeBusFactor([a, b, c]) == 2)
+    }
+
+    // MARK: longestDailyStreak
+
+    @Test("longestDailyStreak: Leere Liste liefert 0")
+    func streakEmpty() {
+        let cal = Calendar(identifier: .gregorian)
+        #expect(RepositoryStatistics.longestDailyStreak([], calendar: cal) == 0)
+    }
+
+    @Test("longestDailyStreak: Einzelner Tag liefert 1")
+    func streakSingleDay() {
+        let cal = Calendar(identifier: .gregorian)
+        let d = Date(timeIntervalSince1970: 1_000_000_000)
+        #expect(RepositoryStatistics.longestDailyStreak([d], calendar: cal) == 1)
+    }
+
+    @Test("longestDailyStreak: Drei aufeinanderfolgende Tage liefert 3")
+    func streakThreeDays() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var c = DateComponents(); c.year = 2024; c.month = 3; c.hour = 12
+        c.day = 1; let d1 = cal.date(from: c)!
+        c.day = 2; let d2 = cal.date(from: c)!
+        c.day = 3; let d3 = cal.date(from: c)!
+        #expect(RepositoryStatistics.longestDailyStreak([d1, d2, d3], calendar: cal) == 3)
+    }
+
+    @Test("longestDailyStreak: Lücke unterbricht Kette")
+    func streakGap() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var c = DateComponents(); c.year = 2024; c.month = 3; c.hour = 12
+        c.day = 1; let d1 = cal.date(from: c)!
+        c.day = 2; let d2 = cal.date(from: c)!
+        c.day = 4; let d4 = cal.date(from: c)!  // Lücke an Tag 3
+        c.day = 5; let d5 = cal.date(from: c)!
+        // Ketten: [1,2]=2, [4,5]=2 → max 2
+        #expect(RepositoryStatistics.longestDailyStreak([d1, d2, d4, d5], calendar: cal) == 2)
+    }
+
+    @Test("longestDailyStreak: Mehrere Commits am selben Tag zählen als 1 Aktivitätstag")
+    func streakSameDayDedup() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var c = DateComponents(); c.year = 2024; c.month = 3; c.day = 10
+        c.hour = 9;  let d1 = cal.date(from: c)!
+        c.hour = 14; let d2 = cal.date(from: c)!   // selber Tag wie d1
+        c.day = 11; c.hour = 10; let d3 = cal.date(from: c)!
+        // Zwei Tage mit je ≥ 1 Commit → Streak 2
+        #expect(RepositoryStatistics.longestDailyStreak([d1, d2, d3], calendar: cal) == 2)
+    }
+
+    // MARK: aggregate – neue KPIs
+
+    @Test("aggregate: averageDaysBetweenCommits bei bekanntem Abstand")
+    func aggregateAvgDaysBetweenCommits() {
+        // 3 Commits mit je 5 Tagen Abstand → Ø = 5 Tage
+        let ts0: TimeInterval = 0
+        let ts1: TimeInterval = 5 * 86400
+        let ts2: TimeInterval = 10 * 86400
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: "\(Int(ts0))\n\(Int(ts1))\n\(Int(ts2))",
+            authors: [],
+            branchCount: 0,
+            tagCount: 0
+        )
+        #expect(abs(s.averageDaysBetweenCommits - 5.0) < 0.01)
+    }
+
+    @Test("aggregate: mostActiveMonth wählt Monat mit den meisten Commits")
+    func aggregateMostActiveMonth() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var c = DateComponents(); c.year = 2024; c.hour = 12
+        // Januar: 1 Commit, Februar: 3 Commits
+        c.month = 1; c.day = 15; let jan = cal.date(from: c)!
+        c.month = 2; c.day = 1;  let feb1 = cal.date(from: c)!
+        c.day = 10; let feb2 = cal.date(from: c)!
+        c.day = 20; let feb3 = cal.date(from: c)!
+        let lines = [jan, feb1, feb2, feb3]
+            .map { "\(Int($0.timeIntervalSince1970))" }.joined(separator: "\n")
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: lines, authors: [], branchCount: 0, tagCount: 0)
+        #expect(s.mostActiveMonth?.count == 3)
+        // Label muss mit "2024-02" beginnen
+        #expect(s.mostActiveMonth?.label == "2024-02")
+    }
+
+    @Test("aggregate: Leerfall → busFactor/streak/avgDays == 0, mostActive == nil")
+    func aggregateEmptyNewKPIs() {
+        let s = RepositoryStatistics.aggregate(
+            timestampLines: "", authors: [], branchCount: 0, tagCount: 0)
+        #expect(s.busFactor == 0)
+        #expect(s.longestStreakDays == 0)
+        #expect(s.averageDaysBetweenCommits == 0)
+        #expect(s.mostActiveMonth == nil)
+        #expect(s.mostActiveWeekday == nil)
+    }
 }

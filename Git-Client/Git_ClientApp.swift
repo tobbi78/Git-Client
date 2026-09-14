@@ -45,9 +45,14 @@ struct Git_ClientApp: App {
         }
     }
 
-    /// Setzt NSApplication.shared.appearance, damit AppKit-Farben
-    /// (Color(nsColor:)) nach jedem Wechsel korrekt auflösen.
+    /// Setzt NSApplication- und Fenster-Appearance, damit AppKit-Farben
+    /// (Color(nsColor:)) sofort und ohne Fokus-Wechsel korrekt auflösen.
+    /// NSApplication allein propagiert Änderungen zu Fenstern erst beim
+    /// nächsten becomeKey/resignKey-Event — das explizite window.appearance
+    /// löst viewDidChangeEffectiveAppearance sofort aus.
     private func applyNSAppearance(_ raw: String) {
-        NSApplication.shared.appearance = AppAppearance(rawValue: raw)?.nsAppearance
+        let nsAppearance = AppAppearance(rawValue: raw)?.nsAppearance
+        NSApplication.shared.appearance = nsAppearance
+        NSApplication.shared.windows.forEach { $0.appearance = nsAppearance }
     }
 }

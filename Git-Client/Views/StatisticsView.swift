@@ -152,18 +152,21 @@ struct StatisticsView: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader("Commits pro Autor")
             let top = Array(s.authors.prefix(15))
+            // Swift Charts rendert domain[0] oben → absteigend sortiertes Array direkt verwenden
+            let domain = top.map { $0.name }
             Chart(top) { author in
                 BarMark(
                     x: .value("Commits", author.commitCount),
-                    y: .value("Autor", author.name)
+                    y: .value("Autor", author.name)  // name = E-Mail, eindeutig nach Gruppierung
                 )
                 .foregroundStyle(Color.accentColor.gradient)
                 .annotation(position: .trailing, spacing: 6) {
-                    Text(String(format: "%.0f%%", author.percentage))
+                    Text(String(format: "%.1f%% (%d)", author.percentage, author.commitCount))
                         .font(.caption2)
                         .foregroundStyle(Color.secondary)
                 }
             }
+            .chartYScale(domain: domain)
             .chartYAxis {
                 AxisMarks { _ in AxisValueLabel() }
             }

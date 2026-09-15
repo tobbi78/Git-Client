@@ -54,19 +54,24 @@ struct StatisticsView: View {
 
     // MARK: - Überblick
 
+    private let kpiColumns = [GridItem(.adaptive(minimum: 160, maximum: 240), spacing: 12)]
+
     private func overviewSection(_ s: RepositoryStatistics) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 24) {
             sectionHeader("Überblick")
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 160, maximum: 240))],
-                spacing: 12
-            ) {
-                kpiTile("Commits gesamt",    value: "\(s.totalCommits)")
-                kpiTile("Autoren",           value: "\(s.authorCount)")
-                kpiTile("Branches",          value: "\(s.branchCount)")
-                kpiTile("Tags",              value: "\(s.tagCount)")
-                kpiTile("Ø Commits/Woche",   value: String(format: "%.1f", s.commitsPerWeekAverage))
-                kpiTile("Aktiver Zeitraum",  value: s.activeSpan)
+
+            // Umfang
+            kpiGroup("Umfang") {
+                kpiTile("Commits gesamt", value: "\(s.totalCommits)")
+                kpiTile("Autoren",        value: "\(s.authorCount)")
+                kpiTile("Branches",       value: "\(s.branchCount)")
+                kpiTile("Tags",           value: "\(s.tagCount)")
+            }
+
+            // Zeit & Frequenz
+            kpiGroup("Zeit & Frequenz") {
+                kpiTile("Aktiver Zeitraum", value: s.activeSpan)
+                kpiTile("Ø Commits/Woche",  value: String(format: "%.1f", s.commitsPerWeekAverage))
                 if let first = s.firstCommit {
                     kpiTile("Erster Commit",
                             value: first.formatted(date: .abbreviated, time: .omitted))
@@ -75,9 +80,6 @@ struct StatisticsView: View {
                     kpiTile("Letzter Commit",
                             value: last.formatted(date: .abbreviated, time: .omitted))
                 }
-                if s.busFactor > 0 {
-                    kpiTile("Bus Factor", value: "\(s.busFactor)")
-                }
                 if s.averageDaysBetweenCommits > 0 {
                     kpiTile("Ø Tage/Commit",
                             value: String(format: "%.1f", s.averageDaysBetweenCommits))
@@ -85,9 +87,16 @@ struct StatisticsView: View {
                 if s.longestStreakDays > 0 {
                     kpiTile("Längste Streak", value: "\(s.longestStreakDays) Tage")
                 }
+            }
+
+            // Team
+            kpiGroup("Team") {
+                if s.busFactor > 0 {
+                    kpiTile("Bus Factor", value: "\(s.busFactor)")
+                }
                 if let m = s.mostActiveMonth {
-                    let label = m.date.formatted(.dateTime.year().month(.abbreviated))
-                    kpiTile("Aktivster Monat", value: label)
+                    kpiTile("Aktivster Monat",
+                            value: m.date.formatted(.dateTime.year().month(.abbreviated)))
                 }
                 if let wd = s.mostActiveWeekday {
                     kpiTile("Aktivster Wochentag", value: weekdayLabels[wd.weekday - 1])
@@ -109,6 +118,32 @@ struct StatisticsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func kpiGroup<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        LazyVGrid(columns: kpiColumns, spacing: 12) {
+            content()
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .padding(.top, 24)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
+        .overlay(alignment: .topLeading) {
+            Text(title)
+                .font(.callout.bold())
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 6)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .offset(x: 14, y: -10)
+        }
+        .padding(.top, 10)
     }
 
     // MARK: - Autoren

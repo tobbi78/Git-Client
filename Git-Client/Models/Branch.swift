@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct Branch: Identifiable, Hashable, Sendable {
+nonisolated struct Branch: Identifiable, Hashable, Sendable {
     let name: String
     let shortName: String  // ohne "origin/" Präfix bei Remote-Branches
     let isCurrent: Bool

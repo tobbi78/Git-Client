@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct Commit: Identifiable, Hashable, Sendable {
+nonisolated struct Commit: Identifiable, Hashable, Sendable {
     let sha: String
     let shortSha: String
     let parents: [String]

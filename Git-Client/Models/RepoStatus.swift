@@ -8,7 +8,7 @@
 
 import Foundation
 
-struct RepoStatus: Equatable, Sendable {
+nonisolated struct RepoStatus: Equatable, Sendable {
     /// Aktuell ausgecheckter Branch (nil = detached HEAD oder unbekannt).
     var currentBranch: String? = nil
     /// Lokale Commits, die noch nicht auf den Server gepusht wurden.
@@ -25,15 +25,15 @@ struct RepoStatus: Equatable, Sendable {
     /// true wenn der Server Commits hat, die lokal fehlen.
     var isBehind: Bool { hasUpstream && behindCount > 0 }
 
-    // MARK: - Reine Helfer (nonisolated static, synchron testbar)
+    // MARK: - Reine Helfer (synchron testbar; Typ selbst ist nonisolated)
 
     /// Gibt zurück, ob `git status --porcelain`-Ausgabe uncommittete Änderungen anzeigt.
-    nonisolated static func parsePorcelainDirty(_ output: String) -> Bool {
+    static func parsePorcelainDirty(_ output: String) -> Bool {
         !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Kompakte deutsche Relativzeitdarstellung eines Datums (z.B. „vor 3 Std.", „vor 2 Tg.").
-    nonisolated static func relativeLabel(from date: Date, to now: Date = Date()) -> String {
+    static func relativeLabel(from date: Date, to now: Date = Date()) -> String {
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: "de_DE")
         f.unitsStyle = .abbreviated

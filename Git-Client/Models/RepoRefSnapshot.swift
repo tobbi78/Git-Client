@@ -11,7 +11,7 @@ import Foundation
 // MARK: - RepoNewCommits
 
 /// Zusammenfassung des „Neuigkeiten"-Stands eines Repositories.
-struct RepoNewCommits: Equatable, Sendable {
+nonisolated struct RepoNewCommits: Equatable, Sendable {
     /// `.git` hat sich gegenüber der Session-Baseline verändert
     /// (neuer lokaler Commit, externer Terminal-Fetch/-Pull).
     var hasLocalChanges: Bool = false
@@ -27,13 +27,13 @@ struct RepoNewCommits: Equatable, Sendable {
 // MARK: - RepoRefSnapshot
 
 /// Statische Parser-Methoden für git-Ref-Ausgaben.
-enum RepoRefSnapshot {
+nonisolated enum RepoRefSnapshot {
 
     // MARK: - Parser: for-each-ref
 
     /// Parst die `git for-each-ref --format="%(objectname) %(refname)"` Ausgabe.
     /// Ergibt ein `[refname: sha]`-Dictionary.
-    nonisolated static func parseForEachRef(_ output: String) -> [String: String] {
+    static func parseForEachRef(_ output: String) -> [String: String] {
         var result: [String: String] = [:]
         for line in output.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -54,7 +54,7 @@ enum RepoRefSnapshot {
     /// Parst die `git ls-remote --heads` Ausgabe.
     /// Format je Zeile: `<sha>\t<refname>` — Peeled-Zeilen (`^{}`) werden verworfen.
     /// Ergibt ein `[refname: sha]`-Dictionary (nur `refs/heads/...`-Einträge).
-    nonisolated static func parseLsRemote(_ output: String) -> [String: String] {
+    static func parseLsRemote(_ output: String) -> [String: String] {
         var result: [String: String] = [:]
         for line in output.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -82,7 +82,7 @@ enum RepoRefSnapshot {
     ///   - remoteHeads: Ergebnis von `parseLsRemote` — enthält `refs/heads/<branch>` vom Server.
     ///   - remoteName: Name des Remotes, z.B. `"origin"`.
     /// - Returns: Anzahl der Branches, bei denen Server-SHA ≠ lokaler Remote-Tracking-SHA.
-    nonisolated static func remoteAhead(
+    static func remoteAhead(
         localSignature: [String: String],
         remoteHeads: [String: String],
         remoteName: String

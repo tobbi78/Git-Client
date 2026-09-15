@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct AuthorStat: Identifiable, Equatable, Sendable {
+nonisolated struct AuthorStat: Identifiable, Equatable, Sendable {
     var id: String { email.isEmpty ? name : email }
     let name: String
     let email: String
@@ -13,26 +13,26 @@ struct AuthorStat: Identifiable, Equatable, Sendable {
     let percentage: Double
 }
 
-struct PeriodCount: Identifiable, Equatable, Sendable {
+nonisolated struct PeriodCount: Identifiable, Equatable, Sendable {
     var id: String { label }
     let label: String  // "YYYY-MM"
     let date: Date     // erster Tag des Monats
     let count: Int
 }
 
-struct DayCount: Identifiable, Equatable, Sendable {
+nonisolated struct DayCount: Identifiable, Equatable, Sendable {
     var id: Int { weekday }
     let weekday: Int   // 1=Mo … 7=So (ISO 8601)
     let count: Int
 }
 
-struct HourCount: Identifiable, Equatable, Sendable {
+nonisolated struct HourCount: Identifiable, Equatable, Sendable {
     var id: Int { hour }
     let hour: Int      // 0–23
     let count: Int
 }
 
-struct RepositoryStatistics: Equatable, Sendable {
+nonisolated struct RepositoryStatistics: Equatable, Sendable {
     let totalCommits: Int
     let authorCount: Int
     let firstCommit: Date?
@@ -70,6 +70,11 @@ struct RepositoryStatistics: Equatable, Sendable {
 }
 
 // MARK: - Parsing & Aggregation
+//
+// `nonisolated` auf der Typdeklaration von `RepositoryStatistics` selbst erfasst
+// NICHT die Member dieser separaten `extension` — Extensions bekommen ihre
+// Actor-Isolation unabhängig vom SWIFT_DEFAULT_ACTOR_ISOLATION-Default des Ziels,
+// daher hier weiterhin explizit `nonisolated` pro Funktion nötig.
 
 extension RepositoryStatistics {
 

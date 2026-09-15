@@ -5,14 +5,14 @@
 
 import Foundation
 
-enum DiffLineType: Sendable {
+nonisolated enum DiffLineType: Sendable {
     case context
     case addition
     case deletion
     case hunkHeader
 }
 
-struct DiffLine: Identifiable, Sendable {
+nonisolated struct DiffLine: Identifiable, Sendable {
     let id: Int  // Index im Hunk
     let type: DiffLineType
     let content: String
@@ -22,17 +22,17 @@ struct DiffLine: Identifiable, Sendable {
     let newLineNumber: Int?
 }
 
-struct DiffHunk: Identifiable, Sendable {
+nonisolated struct DiffHunk: Identifiable, Sendable {
     let id: Int
     let header: String
     let lines: [DiffLine]
 }
 
-enum DiffFileChangeType: Sendable {
+nonisolated enum DiffFileChangeType: Sendable {
     case added, deleted, modified, renamed
 }
 
-struct DiffFile: Identifiable, Sendable {
+nonisolated struct DiffFile: Identifiable, Sendable {
     let id: Int
     let oldPath: String
     let newPath: String
@@ -65,7 +65,7 @@ struct DiffFile: Identifiable, Sendable {
     }
 }
 
-struct CommitDiff: Sendable {
+nonisolated struct CommitDiff: Sendable {
     let sha: String
     let files: [DiffFile]
 }

@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct BlameLine: Identifiable, Sendable {
+nonisolated struct BlameLine: Identifiable, Sendable {
     let id: Int           // finale Zeilennummer (eindeutig pro Datei)
     let lineNumber: Int   // finale Zeilennummer in der aktuellen Datei
     let sha: String       // voller Commit-SHA (40 Hex-Zeichen)

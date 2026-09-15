@@ -3427,9 +3427,13 @@ struct RepositoryViewModelCoverageTests {
         #expect(vm.blameFilePath == "readme.txt")
 
         // Polling bis loadBlame-Task fertig ist (Timeout 5 s).
-        // Jeder Sleep-Schritt gibt den @MainActor frei, damit der unstrukturierte
-        // loadBlame-Task seinen Hop zurück auf den Actor abschließen kann.
-        for _ in 0..<100 where vm.isBlameLoading {
+        // Bewusst NICHT "where vm.isBlameLoading": der unstrukturierte loadBlame-Task
+        // läuft erst beim nächsten Suspension-Punkt an, isBlameLoading kann beim
+        // allerersten Check hier also noch false sein, obwohl der Task noch gar nicht
+        // gestartet ist — dann würde die where-Klausel jede Iteration überspringen,
+        // nie ein await auslösen und die Assertions liefen vor dem Task-Start.
+        for _ in 0..<100 {
+            if !vm.isBlameLoading && !vm.blameLines.isEmpty { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         #expect(!vm.isBlameLoading)

@@ -54,43 +54,61 @@ struct StatisticsView: View {
 
     // MARK: - Überblick
 
+    private let kpiColumns = [GridItem(.adaptive(minimum: 160, maximum: 240), spacing: 12)]
+
     private func overviewSection(_ s: RepositoryStatistics) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 24) {
             sectionHeader("Überblick")
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 160, maximum: 240))],
-                spacing: 12
-            ) {
-                kpiTile("Commits gesamt",    value: "\(s.totalCommits)")
-                kpiTile("Autoren",           value: "\(s.authorCount)")
-                kpiTile("Branches",          value: "\(s.branchCount)")
-                kpiTile("Tags",              value: "\(s.tagCount)")
-                kpiTile("Ø Commits/Woche",   value: String(format: "%.1f", s.commitsPerWeekAverage))
-                kpiTile("Aktiver Zeitraum",  value: s.activeSpan)
-                if let first = s.firstCommit {
-                    kpiTile("Erster Commit",
-                            value: first.formatted(date: .abbreviated, time: .omitted))
+
+            // Umfang
+            VStack(alignment: .leading, spacing: 10) {
+                subHeader("Umfang")
+                LazyVGrid(columns: kpiColumns, spacing: 12) {
+                    kpiTile("Commits gesamt", value: "\(s.totalCommits)")
+                    kpiTile("Autoren",        value: "\(s.authorCount)")
+                    kpiTile("Branches",       value: "\(s.branchCount)")
+                    kpiTile("Tags",           value: "\(s.tagCount)")
                 }
-                if let last = s.lastCommit {
-                    kpiTile("Letzter Commit",
-                            value: last.formatted(date: .abbreviated, time: .omitted))
+            }
+
+            // Zeit & Frequenz
+            VStack(alignment: .leading, spacing: 10) {
+                subHeader("Zeit & Frequenz")
+                LazyVGrid(columns: kpiColumns, spacing: 12) {
+                    kpiTile("Aktiver Zeitraum", value: s.activeSpan)
+                    kpiTile("Ø Commits/Woche",  value: String(format: "%.1f", s.commitsPerWeekAverage))
+                    if let first = s.firstCommit {
+                        kpiTile("Erster Commit",
+                                value: first.formatted(date: .abbreviated, time: .omitted))
+                    }
+                    if let last = s.lastCommit {
+                        kpiTile("Letzter Commit",
+                                value: last.formatted(date: .abbreviated, time: .omitted))
+                    }
+                    if s.averageDaysBetweenCommits > 0 {
+                        kpiTile("Ø Tage/Commit",
+                                value: String(format: "%.1f", s.averageDaysBetweenCommits))
+                    }
+                    if s.longestStreakDays > 0 {
+                        kpiTile("Längste Streak", value: "\(s.longestStreakDays) Tage")
+                    }
                 }
-                if s.busFactor > 0 {
-                    kpiTile("Bus Factor", value: "\(s.busFactor)")
-                }
-                if s.averageDaysBetweenCommits > 0 {
-                    kpiTile("Ø Tage/Commit",
-                            value: String(format: "%.1f", s.averageDaysBetweenCommits))
-                }
-                if s.longestStreakDays > 0 {
-                    kpiTile("Längste Streak", value: "\(s.longestStreakDays) Tage")
-                }
-                if let m = s.mostActiveMonth {
-                    let label = m.date.formatted(.dateTime.year().month(.abbreviated))
-                    kpiTile("Aktivster Monat", value: label)
-                }
-                if let wd = s.mostActiveWeekday {
-                    kpiTile("Aktivster Wochentag", value: weekdayLabels[wd.weekday - 1])
+            }
+
+            // Team
+            VStack(alignment: .leading, spacing: 10) {
+                subHeader("Team")
+                LazyVGrid(columns: kpiColumns, spacing: 12) {
+                    if s.busFactor > 0 {
+                        kpiTile("Bus Factor", value: "\(s.busFactor)")
+                    }
+                    if let m = s.mostActiveMonth {
+                        kpiTile("Aktivster Monat",
+                                value: m.date.formatted(.dateTime.year().month(.abbreviated)))
+                    }
+                    if let wd = s.mostActiveWeekday {
+                        kpiTile("Aktivster Wochentag", value: weekdayLabels[wd.weekday - 1])
+                    }
                 }
             }
         }

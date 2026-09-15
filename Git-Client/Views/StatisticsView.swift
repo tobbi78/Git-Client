@@ -156,7 +156,7 @@ struct StatisticsView: View {
             let domain = top.map { $0.name }
             Chart(top) { author in
                 BarMark(
-                    x: .value("Commits", author.commitCount),
+                    x: .value("Anteil (%)", author.percentage),
                     y: .value("Autor", author.name)
                 )
                 .foregroundStyle(Color.accentColor.gradient)
@@ -164,6 +164,17 @@ struct StatisticsView: View {
                     Text(String(format: "%.1f%% (%d)", author.percentage, author.commitCount))
                         .font(.caption2)
                         .foregroundStyle(Color.secondary)
+                }
+            }
+            .chartXScale(domain: 0...100)
+            .chartXAxis {
+                AxisMarks(values: [0, 25, 50, 75, 100]) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text("\(Int(v))%").font(.caption2)
+                        }
+                    }
                 }
             }
             .chartYScale(domain: domain)

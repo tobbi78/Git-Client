@@ -62,18 +62,31 @@ actor GitRunner {
             // (macOS: ~64 KB) nicht vollläuft. Ohne paralleles Lesen blockiert git bei
             // großen Ausgaben (z.B. git log auf einem großen Repo), wartet auf das
             // Leeren des Buffers — und waitUntilExit() kehrt nie zurück (Deadlock).
+            //
+            // Bewusst auf dedizierten DispatchQueue.global-Threads statt via `async let`/
+            // Task: das hier ist echtes blockierendes I/O (readDataToEndOfFile,
+            // waitUntilExit, group.wait). Auf Swifts kooperativem Thread-Pool ausgeführt,
+            // erschöpft blockierendes I/O bei genug gleichzeitigen GitRunner-Aufrufen
+            // (z.B. Testsuite mit paralleler withTaskGroup-Nutzung) den Pool und friert
+            // die App/Tests ein — ausprobiert und wieder verworfen (siehe Git-Historie).
+            //
+            // QoS bewusst `.userInitiated` (nicht `.utility`): verhindert die
+            // Prioritätsinversion, die entstand, wenn ein Aufrufer mit höherer QoS
+            // hier auf niedriger priorisierte Reader-Threads wartete (Xcode Runtime
+            // Issue). `.userInitiated` passt zu den tatsächlichen Aufrufern (UI-nahe
+            // ViewModel-Actions), ist aber weiterhin niedriger als `.userInteractive`.
             let group = DispatchGroup()
             let stdoutCollector = DataCollector()
             let stderrCollector = DataCollector()
 
             group.enter()
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.global(qos: .userInitiated).async {
                 stdoutCollector.data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                 group.leave()
             }
 
             group.enter()
-            DispatchQueue.global(qos: .utility).async {
+            DispatchQueue.global(qos: .userInitiated).async {
                 stderrCollector.data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                 group.leave()
             }
@@ -93,6 +106,9 @@ actor GitRunner {
     }
 
     /// Kurzform: wirft GitError.nonZeroExit bei exitCode != 0, gibt stdout zurück.
+    /// Discardable, da mehrere Aufrufer (clone, fetch, fastForward) nur am Erfolg/
+    /// Fehler interessiert sind, nicht am stdout-Inhalt.
+    @discardableResult
     func runOrThrow(_ arguments: [String], workingDirectory: URL? = nil) async throws -> String {
         let result = try await run(arguments, workingDirectory: workingDirectory)
         guard result.exitCode == 0 else {
@@ -111,4 +127,3 @@ private final class DataCollector: @unchecked Sendable {
     nonisolated init() {}
     nonisolated(unsafe) var data = Data()
 }
-

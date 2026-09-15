@@ -8,7 +8,7 @@
 
 import Foundation
 
-struct CommitSearchCriteria: Equatable, Sendable {
+nonisolated struct CommitSearchCriteria: Equatable, Sendable {
     var message: String = ""
     var author:  String = ""
     var since:   Date?  = nil
@@ -26,5 +26,5 @@ struct CommitSearchCriteria: Equatable, Sendable {
 }
 
 private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespaces) }
+    nonisolated var trimmed: String { trimmingCharacters(in: .whitespaces) }
 }

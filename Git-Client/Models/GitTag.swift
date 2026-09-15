@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct GitTag: Identifiable, Hashable, Sendable {
+nonisolated struct GitTag: Identifiable, Hashable, Sendable {
     let name: String
     let targetSha: String
 

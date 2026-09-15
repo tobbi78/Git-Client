@@ -1090,7 +1090,7 @@ struct GitServiceParserTests {
 
 // MARK: - AppSettings
 
-@Suite("AppSettings")
+@Suite("AppSettings", .serialized)
 struct AppSettingsTests {
 
     @Test("Standardwert ist 2000")
@@ -2438,7 +2438,7 @@ struct AppAppearanceTests {
 
 // MARK: - AppSettings Erweitert (JIRA, Auto-Refresh, Poll-Intervall, Anzeige)
 
-@Suite("AppSettings — Erweitert")
+@Suite("AppSettings — Erweitert", .serialized)
 struct AppSettingsExtendedTests {
 
     // MARK: JIRA Base URL
@@ -2882,15 +2882,16 @@ struct RepositoryStatisticsTests {
 
     // MARK: parseShortlog
 
-    @Test("parseShortlog: Name und E-Mail werden korrekt getrennt")
+    @Test("parseShortlog: E-Mail wird als Gruppierschlüssel und Anzeigename verwendet")
     func parseShortlogBasic() {
         let output = "     5\tAlice Smith <alice@example.com>\n     3\tBob Jones <bob@example.com>\n"
         let authors = RepositoryStatistics.parseShortlog(output)
         #expect(authors.count == 2)
-        #expect(authors[0].name == "Alice Smith")
+        // name = E-Mail-Adresse (lowercased), da nach E-Mail gruppiert wird
+        #expect(authors[0].name == "alice@example.com")
         #expect(authors[0].email == "alice@example.com")
         #expect(authors[0].commitCount == 5)
-        #expect(authors[1].name == "Bob Jones")
+        #expect(authors[1].name == "bob@example.com")
         #expect(authors[1].commitCount == 3)
     }
 
@@ -2912,7 +2913,8 @@ struct RepositoryStatisticsTests {
         let output = "     2\tAlice Smith\n"
         let authors = RepositoryStatistics.parseShortlog(output)
         #expect(authors.count == 1)
-        #expect(authors[0].name == "Alice Smith")
+        // Ohne E-Mail wird der lowercased Name als Schlüssel verwendet
+        #expect(authors[0].name == "alice smith")
         #expect(authors[0].email == "")
     }
 

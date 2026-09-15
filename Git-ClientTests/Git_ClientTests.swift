@@ -3,6 +3,21 @@
 //  Git-ClientTests
 //
 
+// TODO: ~47 Compiler-Warnungen "Main actor-isolated property/initializer ...
+// cannot be accessed from outside of the actor; this is an error in the Swift 6
+// language mode", verteilt über mehrere @Suite-structs in dieser Datei (u.a. rund
+// um Zeilen 1004-1090, 1614-1692, 1940, 2266-2300, 3254). Ursache: SWIFT_DEFAULT_
+// ACTOR_ISOLATION = MainActor macht einfache Wertetypen (Commit, Branch, GitTag,
+// JiraProject, CommitSearchCriteria, DiffLineType, ...) implizit MainActor-isoliert;
+// mehrere @Suite-structs hier sind nicht @MainActor und konstruieren/mutieren sie
+// trotzdem direkt. Nur Warnungen unter Swift 5, würden unter Swift 6 zu Build-Fehlern.
+// Erst beim Vollbuild sichtbar, nicht bei inkrementellen Builds — daher lange
+// unentdeckt (gefunden 2026-09-15 im Rahmen des GitRunner-Prioritätsinversion-Fixes).
+// Nächster Schritt: entweder betroffene @Suite-structs @MainActor annotieren
+// (Präzedenzfall: RepositoryViewModelCoverageTests), oder besser die Modelltypen
+// selbst `nonisolated` machen (passt zum bestehenden Muster in GitLogParser/
+// CommitGraphBuilder/RepositoryStatistics, die den globalen Default schon so umgehen).
+
 import Testing
 import Foundation
 import SwiftUI

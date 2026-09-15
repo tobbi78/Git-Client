@@ -24,9 +24,13 @@
         <li><a href="#uebersicht">Überblick</a></li>
         <li><a href="#repositories">Repositories verwalten</a></li>
         <li><a href="#graph">Commit-History &amp; Graph lesen</a></li>
+        <li><a href="#suche">Commits durchsuchen &amp; filtern</a></li>
         <li><a href="#navigation">Branches und Tags</a></li>
         <li><a href="#diff">Diff ansehen</a></li>
+        <li><a href="#blame">Blame-Ansicht</a></li>
+        <li><a href="#statistiken">Statistiken</a></li>
         <li><a href="#reload">Neu laden</a></li>
+        <li><a href="#autorefresh">Automatische Erkennung neuer Commits</a></li>
         <li><a href="#einstellungen">Einstellungen</a></li>
     </ol>
 </nav>
@@ -44,7 +48,7 @@
 <table>
     <tr><th>Bereich</th><th>Inhalt</th></tr>
     <tr><td>Seitenleiste (links)</td><td>Branches, Remote-Branches, Tags</td></tr>
-    <tr><td>Commit-Liste (rechts oben)</td><td>Graph + Commit-Zeilen</td></tr>
+    <tr><td>Commit-Liste (rechts oben)</td><td>Graph + Commit-Zeilen, Suche/Filter</td></tr>
     <tr><td>Diff (rechts unten)</td><td>Geänderter Code des ausgewählten Commits</td></tr>
 </table>
 
@@ -84,6 +88,24 @@
     <strong>Doppelklick</strong> auf einen Repository-Eintrag öffnet das Repository
     in der Commit-Ansicht. Klicke auf <strong>„Zurück"</strong> in der Toolbar
     (Pfeil-Symbol), um zur Übersicht zurückzukehren.
+</p>
+
+<h4 id="statuszeile">Status pro Repository</h4>
+<p>
+    Jeder Repository-Eintrag zeigt direkt in der Übersicht eine kompakte Statuszeile —
+    ganz ohne das Repository zu öffnen:
+</p>
+<table>
+    <tr><th>Anzeige</th><th>Bedeutung</th></tr>
+    <tr><td>Branch-Symbol + Name</td><td>Aktuell ausgecheckter Branch</td></tr>
+    <tr><td>↓ mit Zahl</td><td>So viele Commits liegen auf dem Server, die lokal noch fehlen</td></tr>
+    <tr><td>↑ mit Zahl</td><td>So viele lokale Commits sind noch nicht gepusht</td></tr>
+    <tr><td>Stift-Symbol</td><td>Es gibt unkommittete Änderungen im Arbeitsverzeichnis</td></tr>
+    <tr><td>Datum rechtsbündig</td><td>Zeitpunkt des letzten Commits, relativ (z.B. „vor 3 Std.")</td></tr>
+</table>
+<p>
+    Ein orangenes Warnsymbol ⚠️ statt der Statuszeile bedeutet, dass der Repository-Ordner
+    unter dem gespeicherten Pfad nicht mehr gefunden wird (siehe unten).
 </p>
 
 <h4>Umsortieren per Drag &amp; Drop</h4>
@@ -185,6 +207,34 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="suche">Commits durchsuchen &amp; filtern</h2>
+
+<p>
+    Oberhalb der Commit-Liste befindet sich ein Suchfeld, mit dem sich die Historie
+    nach <strong>Nachricht</strong> durchsuchen lässt. Die Eingabe wird entprellt
+    (300 ms), sodass die Suche auch in großen Repositories flüssig bleibt und nicht
+    bei jedem Tastenanschlag neu lädt.
+</p>
+
+<h3>Erweiterte Filter</h3>
+<p>
+    Über das Filter-Symbol (<code>line.3.horizontal.decrease.circle</code>) neben dem
+    Suchfeld öffnest du zusätzliche Kriterien, die <strong>alle gemeinsam (UND-verknüpft)</strong>
+    angewendet werden:
+</p>
+<table>
+    <tr><th>Kriterium</th><th>Bedeutung</th></tr>
+    <tr><td>Autor</td><td>Name oder E-Mail-Adresse (Teilstring)</td></tr>
+    <tr><td>SHA</td><td>Commit-Hash-Präfix — findet auch mehrdeutige Kurz-SHAs</td></tr>
+    <tr><td>Von / Bis</td><td>Zeitraum mit Datum und Uhrzeit</td></tr>
+</table>
+<p>
+    Solange ein Suchkriterium aktiv ist, zeigt die Titelzeile die Anzahl der Treffer.
+    Über das <strong>×</strong>-Symbol im Suchfeld werden alle Kriterien zurückgesetzt
+    und die vollständige Historie wieder angezeigt.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="navigation">Branches und Tags</h2>
 
 <p>
@@ -226,6 +276,98 @@
     der Maus verschieben, um den Platz nach Bedarf aufzuteilen.
 </p>
 
+<h3>Zeilennummern</h3>
+<p>
+    Links neben jeder Patch-Zeile können die alte und neue Zeilennummer angezeigt
+    werden — wie in Sourcetree oder GitHub. Ein- und ausschaltbar unter
+    <strong>Einstellungen › Anzeige</strong> (Standard: eingeschaltet).
+</p>
+
+<h3 id="jira">JIRA-Ticket-Verknüpfung</h3>
+<p>
+    Enthält eine Commit-Nachricht einen Ticket-Key eines konfigurierten JIRA-Projekts
+    (z.B. <code>PROJ-123</code>), wird er automatisch als <strong>klickbarer Link</strong>
+    dargestellt und öffnet das Ticket im Browser unter
+    <code>&lt;Basis-URL&gt;/browse/&lt;KEY-123&gt;</code>. Server-URL und die Liste der
+    Projekt-Keys werden unter <strong>Einstellungen › JIRA</strong> konfiguriert; ohne
+    Konfiguration bleiben Ticket-Keys unverlinkter Text.
+</p>
+
+<h3>Datei-Kontextmenü</h3>
+<p>
+    Ein <strong>Rechtsklick</strong> auf eine Datei in der Dateiliste des Commit-Details
+    bietet zusätzliche Aktionen — u.a. <strong>„Blame anzeigen"</strong> (nicht verfügbar
+    für gelöschte Dateien, siehe nächster Abschnitt).
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="blame">Blame-Ansicht</h2>
+
+<p>
+    Die Blame-Ansicht zeigt zeilenweise, <strong>wer welche Zeile einer Datei zuletzt
+    geändert hat</strong> — im Zustand des aktuell ausgewählten Commits.
+</p>
+
+<h3>Öffnen</h3>
+<p>
+    Rechtsklick auf eine Datei im Commit-Detail → <strong>„Blame anzeigen"</strong>
+    öffnet ein Fenster mit einer Zeile pro Quellcode-Zeile, je mit:
+</p>
+<table>
+    <tr><th>Spalte</th><th>Bedeutung</th></tr>
+    <tr><td>Kurz-SHA</td><td>Commit, der diese Zeile zuletzt geändert hat</td></tr>
+    <tr><td>Autor</td><td>Name des Autors dieses Commits</td></tr>
+    <tr><td>Datum</td><td>Datum dieses Commits</td></tr>
+    <tr><td>Inhalt</td><td>Der eigentliche Zeileninhalt</td></tr>
+</table>
+<p>
+    Ein <strong>Klick auf eine Commit-SHA</strong> in der Blame-Ansicht springt in der
+    Hauptliste direkt zu diesem Commit.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="statistiken">Statistiken</h2>
+
+<p>
+    Über das Diagramm-Symbol in der Toolbar öffnet sich ein eigenes
+    <strong>Statistik-Fenster</strong> für das aktuell geöffnete Repository. Es lässt
+    sich unabhängig vom Hauptfenster verschieben und offen halten.
+</p>
+
+<h3>Überblick (KPI-Kacheln)</h3>
+<p>
+    Kennzahlen sind in drei umrahmte, thematische Gruppen gegliedert:
+</p>
+<table>
+    <tr><th>Gruppe</th><th>Enthält</th></tr>
+    <tr><td>Umfang</td><td>Commits gesamt, Autoren, Branches, Tags</td></tr>
+    <tr><td>Zeit &amp; Frequenz</td><td>Aktiver Zeitraum, Ø Commits/Woche, erster/letzter
+        Commit, Ø Tage pro Commit, längste tägliche Commit-Streak</td></tr>
+    <tr><td>Team</td><td>Bus Factor (minimale Autorenzahl für ≥ 80 % aller Commits),
+        aktivster Monat, aktivster Wochentag</td></tr>
+</table>
+
+<h3>Commits pro Autor</h3>
+<p>
+    Ein Balkendiagramm zeigt die Commit-Anzahl je Autor, absteigend sortiert, mit
+    Prozentanteil an der Gesamthistorie. Autoren werden anhand ihrer
+    <strong>E-Mail-Adresse</strong> zusammengefasst — dieselbe Person erscheint damit
+    unabhängig von Schreibweise des Namens nur als ein Balken.
+</p>
+
+<h3>Aktivität über Zeit</h3>
+<p>
+    Ein Flächen-/Liniendiagramm zeigt die Anzahl der Commits pro Monat über die
+    gesamte Repository-Historie.
+</p>
+
+<h3>Commit-Rhythmus</h3>
+<p>
+    Zwei weitere Diagramme zeigen die Verteilung der Commits nach
+    <strong>Wochentag</strong> (Mo–So) und nach <strong>Tageszeit</strong> (0–23 Uhr) —
+    hilfreich, um typische Arbeitszeiten im Projekt zu erkennen.
+</p>
+
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="reload">Neu laden</h2>
 
@@ -241,14 +383,67 @@
 </p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="autorefresh">Automatische Erkennung neuer Commits</h2>
+
+<p>
+    Git-Client beobachtet alle Repositories aus der Übersicht im Hintergrund und
+    macht dezent auf neue Commits aufmerksam — <strong>ohne dass du „Neu laden"
+    klicken musst</strong> und ohne dabei selbst schreibend ins Repository
+    einzugreifen.
+</p>
+
+<h3>Wie die Erkennung funktioniert</h3>
+<ul>
+    <li><strong>Lokal:</strong> Änderungen im <code>.git</code>-Verzeichnis werden
+        per FSEvents sofort erkannt (z.B. ein Commit im Terminal) — für
+        <strong>alle</strong> Repositories in der Übersicht.</li>
+    <li><strong>Remote:</strong> In einstellbarem Intervall prüft die App per
+        <code>git fetch</code>, ob es auf dem Server neue Commits gibt. Das
+        funktioniert derzeit nur für Repositories, die über <strong>„Klonen"</strong>
+        hinzugefügt wurden (deren Remote-URL in der App gespeichert ist). Über
+        <strong>„Repository hinzufügen"</strong> eingebundene Repositories erhalten
+        nur die lokale Erkennung, keinen periodischen Remote-Check.</li>
+</ul>
+
+<h3>Wo die Hinweise erscheinen</h3>
+<ul>
+    <li>In der Repository-Übersicht als kleines <strong>„neu"-Badge</strong> neben
+        dem betroffenen Eintrag.</li>
+    <li>Im geöffneten Repository als <strong>Hinweis-Banner</strong> oberhalb der
+        Commit-Liste, mit einem Button zum Aktualisieren.</li>
+</ul>
+<p>
+    Ein Klick auf „Aktualisieren" lädt die Commit-Liste lokal neu (kein zusätzlicher
+    Download) und markiert den aktuellen Stand als gesehen — der Hinweis verschwindet.
+</p>
+
+<div class="note">
+    <strong>Hinweis:</strong>
+    Aktivierung und Intervall der automatischen Erkennung lassen sich unter
+    <strong>Einstellungen › Aktualisierung</strong> anpassen oder ganz abschalten.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="einstellungen">Einstellungen</h2>
 
 <p>
     Die Einstellungen öffnest du über das Menü <strong>Git-Client → Einstellungen…</strong>
-    oder mit der Tastenkombination <strong>⌘,</strong>.
+    oder mit der Tastenkombination <strong>⌘,</strong>. Sie sind auf vier Reiter
+    verteilt: <strong>JIRA</strong>, <strong>Commits</strong>, <strong>Anzeige</strong>
+    und <strong>Aktualisierung</strong>.
+
 </p>
 
-<h3>Commit-Liste</h3>
+<h3>Reiter „JIRA"</h3>
+<table>
+    <tr><th>Einstellung</th><th>Bedeutung</th></tr>
+    <tr><td>Basis-URL</td><td>Adresse deines JIRA-Servers, z.B. <code>https://firma.atlassian.net</code>.</td></tr>
+    <tr><td>Projekte</td><td>Liste aus Projekt-Key (z.B. <code>PROJ</code>) und optionaler
+        Beschreibung. Nur Ticket-Keys der hier eingetragenen Projekte werden verlinkt
+        (siehe <a href="#jira">JIRA-Ticket-Verknüpfung</a>).</td></tr>
+</table>
+
+<h3>Reiter „Commits"</h3>
 <table>
     <tr><th>Einstellung</th><th>Bedeutung</th></tr>
     <tr>
@@ -258,6 +453,28 @@
             Mindestwert: 100. Ein kleinerer Wert beschleunigt den Start,
             erfordert aber häufigeres Nachladen bei langen Historien.</td>
     </tr>
+</table>
+
+<h3>Reiter „Anzeige"</h3>
+<table>
+    <tr><th>Einstellung</th><th>Bedeutung</th></tr>
+    <tr><td>Erscheinungsbild</td><td><strong>Hell</strong>, <strong>Dunkel</strong> oder
+        <strong>Wie System</strong>. Die Änderung greift sofort nach dem Speichern,
+        ohne Neustart.</td></tr>
+    <tr><td>Zeilennummern im Diff anzeigen</td><td>Siehe
+        <a href="#diff">Diff ansehen</a>. Standardwert: eingeschaltet.</td></tr>
+</table>
+
+<h3>Reiter „Aktualisierung"</h3>
+<table>
+    <tr><th>Einstellung</th><th>Bedeutung</th></tr>
+    <tr><td>Neue Commits automatisch anzeigen</td><td>Schaltet die in
+        <a href="#autorefresh">automatische Erkennung</a> beschriebene Hintergrund-Beobachtung
+        ein oder aus.</td></tr>
+    <tr><td>Remote-Prüf-Intervall</td><td>Wie oft per <code>git fetch</code> auf neue
+        Commits geprüft wird, in Sekunden (Mindestwert 60; 0 deaktiviert nur die
+        Remote-Prüfung, lokale Erkennung bleibt aktiv). Gilt nur für Repositories mit
+        gespeicherter Remote-URL — siehe <a href="#autorefresh">automatische Erkennung</a>.</td></tr>
 </table>
 
 <h4>Änderungen speichern</h4>
@@ -275,8 +492,10 @@
 
 <div class="note">
     <strong>Hinweis:</strong>
-    Geänderte Einstellungen gelten ab dem nächsten Öffnen oder Neu-Laden eines
-    Repositories — laufende Ladevorgänge werden nicht unterbrochen.
+    Geänderte Einstellungen zur Commit-Batch-Größe gelten ab dem nächsten Öffnen oder
+    Neu-Laden eines Repositories — laufende Ladevorgänge werden nicht unterbrochen.
+    Erscheinungsbild und Zeilennummern wirken sofort; Änderungen an der automatischen
+    Erkennung gelten ab dem nächsten Start der Hintergrund-Beobachtung.
 </div>
 
 <footer>

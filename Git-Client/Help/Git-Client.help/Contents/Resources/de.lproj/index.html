@@ -22,15 +22,16 @@
     <a class="toc-card" href="bedienung.html">
         <div class="icon">🖥️</div>
         <h3>Bedienung</h3>
-        <p>Repositories verwalten und klonen, Commit-Graph lesen,
-           Lazy Loading, Branches und Tags nutzen,
-           Diff anzeigen, Einstellungen.</p>
+        <p>Repositories verwalten und klonen, Statuszeile, Commit-Graph lesen,
+           Suche &amp; Filter, Branches und Tags, Diff, Blame, JIRA-Verknüpfung,
+           Statistiken, automatische Erkennung neuer Commits, Einstellungen.</p>
     </a>
     <a class="toc-card" href="technik.html">
         <div class="icon">⚙️</div>
         <h3>Technische Implementierung</h3>
         <p>Architektur, GitRunner, Graph-Algorithmus, Persistenz &amp; Speicherort,
-           Lazy Loading, Drag&amp;Drop und Sicherheitskonzept (Keychain).</p>
+           Lazy Loading, Drag&amp;Drop, Sicherheitskonzept (Keychain), Auto-Refresh-
+           Monitoring und Statistiken-Aggregation.</p>
     </a>
     <a class="toc-card" href="releasenotes.html">
         <div class="icon">📋</div>
@@ -56,14 +57,24 @@
             <li><a href="bedienung.html#lazyladen">Große Repositories: Lazy Loading</a></li>
         </ul>
     </li>
+    <li><a href="bedienung.html#suche">Commits durchsuchen &amp; filtern</a></li>
     <li><a href="bedienung.html#navigation">Branches und Tags</a></li>
-    <li><a href="bedienung.html#diff">Diff ansehen</a></li>
+    <li><a href="bedienung.html#diff">Diff ansehen</a>
+        <ul>
+            <li><a href="bedienung.html#jira">JIRA-Ticket-Verknüpfung</a></li>
+        </ul>
+    </li>
+    <li><a href="bedienung.html#blame">Blame-Ansicht</a></li>
+    <li><a href="bedienung.html#statistiken">Statistiken</a></li>
     <li><a href="bedienung.html#reload">Neu laden</a></li>
+    <li><a href="bedienung.html#autorefresh">Automatische Erkennung neuer Commits</a></li>
     <li><a href="bedienung.html#einstellungen">Einstellungen (⌘,)</a></li>
 </ul>
 
 <h3><a href="releasenotes.html">Versionshistorie</a></h3>
 <ul>
+    <li><a href="releasenotes.html#v1_3">Version 1.3</a></li>
+    <li><a href="releasenotes.html#v1_2">Version 1.2</a></li>
     <li><a href="releasenotes.html#v1_1">Version 1.1</a></li>
     <li><a href="releasenotes.html#v1_0">Version 1.0</a></li>
 </ul>
@@ -89,6 +100,8 @@
     </li>
     <li><a href="technik.html#dragdrop">Drag &amp; Drop</a></li>
     <li><a href="technik.html#keychain">Sicherheitskonzept Credentials (Keychain)</a></li>
+    <li><a href="technik.html#monitoring">Auto-Refresh &amp; Repository-Status-Monitoring</a></li>
+    <li><a href="technik.html#statistiken">RepositoryStatistics-Aggregation</a></li>
 </ul>
 
 <footer>Git-Client · Tobias Florian</footer>

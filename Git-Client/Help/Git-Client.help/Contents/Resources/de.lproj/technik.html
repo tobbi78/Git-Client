@@ -30,6 +30,8 @@
         <li><a href="#lazyladen">Lazy Loading der Commit-Liste</a></li>
         <li><a href="#dragdrop">Drag &amp; Drop</a></li>
         <li><a href="#keychain">Sicherheitskonzept Credentials</a></li>
+        <li><a href="#monitoring">Auto-Refresh &amp; Repository-Status-Monitoring</a></li>
+        <li><a href="#statistiken">RepositoryStatistics-Aggregation</a></li>
     </ol>
 </nav>
 
@@ -534,6 +536,151 @@ git log --all --date-order --pretty=format:… -2000 --skip=2000
     versehentlichem Löschen. Der Eintrag kann über die macOS-App
     <strong>Schlüsselbundverwaltung</strong> manuell gefunden und gelöscht werden
     (Suchbegriff: <code>de.tobias.florian.Git-Client.credentials</code>).
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="monitoring">Auto-Refresh &amp; Repository-Status-Monitoring</h2>
+
+<h3>GitFolderWatcher <code style="font-size:0.8em">Services/GitFolderWatcher.swift</code></h3>
+<p>
+    Beobachtet beliebig viele <code>.git</code>-Verzeichnisse in <strong>einem
+    einzigen</strong> <code>FSEventStream</code> statt einem Stream pro Repository.
+    Latenz <code>1.0 s</code> wirkt als Debounce; der Stream läuft auf einer eigenen
+    seriellen <code>DispatchQueue</code>, nicht auf dem Main Actor.
+</p>
+<ul>
+    <li>Der C-Callback bekommt <code>self</code> unretained über den
+        <code>FSEventStreamContext</code>-Pointer übergeben (kein Objective-C-Runtime-
+        Dispatch nötig).</li>
+    <li><code>eventPaths</code> wird dank <code>kFSEventStreamCreateFlagUseCFTypes</code>
+        direkt als <code>CFArray</code> nach <code>[String]</code> gebridged.</li>
+    <li>Für jeden gemeldeten Event-Pfad wird per Prefix-Vergleich ermittelt, zu welchem
+        beobachteten <code>.git</code>-Root er gehört; das Ergebnis ist ein
+        <code>Set&lt;URL&gt;</code> der betroffenen Roots.</li>
+    <li>Der Hop auf den <code>MainActor</code> ist bewusst <strong>nicht</strong>
+        Aufgabe des Watchers — das übernimmt der aufrufende <code>AppModel</code>.</li>
+</ul>
+
+<h3>AppModel-Zustand <code style="font-size:0.8em">ViewModels/AppModel.swift</code></h3>
+<table>
+    <tr><th>Property</th><th>Bedeutung</th></tr>
+    <tr><td><code>monitoringServices: [UUID: GitService]</code></td>
+        <td>Ein <code>GitService</code> pro überwachtem Repository.</td></tr>
+    <tr><td><code>localBaseline: [UUID: [String: String]]</code></td>
+        <td>Ref-Signatur (<code>[refname: sha]</code>) zum Zeitpunkt der letzten
+            „Gesehen"-Markierung — Vergleichsbasis für lokale Änderungserkennung.</td></tr>
+    <tr><td><code>newCommitStatus: [UUID: RepoNewCommits]</code></td>
+        <td>Ob und warum ein Repository einen „neu"-Badge zeigt.</td></tr>
+    <tr><td><code>repoStatus: [UUID: RepoStatus]</code></td>
+        <td>Anzeigedaten für die Statuszeile in der Übersicht.</td></tr>
+</table>
+
+<h4>Ablauf</h4>
+<ol>
+    <li><code>startMonitoring()</code> legt für jedes Repository mit vorhandenem
+        <code>.git</code>-Ordner einen <code>GitService</code> an, ermittelt beim
+        ersten Start die Baseline-Ref-Signatur (<code>GitService.localRefSignature()</code>
+        → <code>git for-each-ref --format="%(objectname) %(refname)" refs/heads
+        refs/remotes</code>, geparst von <code>RepoRefSnapshot.parseForEachRef</code>)
+        und registriert alle <code>.git</code>-Pfade beim <code>GitFolderWatcher</code>.</li>
+    <li>Feuert der Watcher, wird pro betroffenem Repository die Ref-Signatur neu
+        gelesen und mit der Baseline verglichen (<code>hasLocalChanges</code>) sowie
+        <code>refreshLocalStatus()</code> aufgerufen — aktualisiert
+        <code>currentBranch</code>, <code>hasUncommittedChanges</code>
+        (<code>git status --porcelain</code>, ausgewertet von
+        <code>RepoStatus.parsePorcelainDirty</code>), <code>lastCommitDate</code> und
+        <code>aheadBehind</code>.</li>
+    <li>Ist Auto-Refresh aktiv, läuft parallel ein unstrukturierter
+        <code>Task</code>, der im konfigurierten Intervall <code>pollRemotes()</code>
+        aufruft.</li>
+    <li><code>markRepositorySeen(_:)</code> setzt die Baseline auf die aktuelle
+        Signatur zurück und leert den Badge-Status — aufgerufen beim Öffnen eines
+        Repositories oder per Klick auf „Aktualisieren" im Hinweis-Banner.</li>
+</ol>
+
+<h4>pollRemotes() — echtes <code>git fetch</code>, kein <code>ls-remote</code></h4>
+<p>
+    Anders als frühere Beschreibungen in dieser Hilfe nahelegten, prüft
+    <code>pollRemotes()</code> den Server nicht per <code>git ls-remote</code>, sondern
+    ruft <code>GitService.fetch(remoteURL:username:password:)</code> auf — ein
+    echtes <code>git fetch --prune</code>, das neue Commit-Objekte herunterlädt
+    (kein Checkout, aber kein Download-freier Vorgang). Danach wird
+    <code>aheadBehind()</code> (<code>git rev-list --left-right --count
+    @{upstream}...HEAD</code>) neu berechnet.
+</p>
+<div class="note">
+    <strong>Bekannte Einschränkung:</strong>
+    <code>pollRemotes()</code> überspringt Repositories, deren Bookmark keine
+    <code>remoteURL</code> gespeichert hat (<code>guard let remoteURL =
+    repo.remoteURL, !remoteURL.isEmpty else { continue }</code>) — das betrifft
+    alle über „Repository hinzufügen" eingebundenen Repositories, da nur der
+    „Klonen"-Dialog eine <code>remoteURL</code> im Bookmark hinterlegt. Diese
+    Repositories erhalten ausschließlich die lokale FSEvents-Erkennung, keinen
+    automatischen Remote-Check — obwohl der manuelle „Vom Server prüfen"-Button
+    für sie über den lokal konfigurierten Remote-Namen einwandfrei funktioniert.
+    Bewusst so belassen (Stand 2026-09-15); siehe TODO-Kommentar direkt über
+    <code>pollRemotes()</code> in <code>AppModel.swift</code>.
+</div>
+
+<h3>RepoStatus <code style="font-size:0.8em">Models/RepoStatus.swift</code></h3>
+<p>
+    Reiner Wertetyp ohne I/O. Die beiden Hilfsfunktionen
+    <code>parsePorcelainDirty(_:)</code> und <code>relativeLabel(from:to:)</code> sind
+    <code>nonisolated static</code> und damit ohne Git-Aufruf synchron unit-testbar.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="statistiken">RepositoryStatistics-Aggregation</h2>
+
+<h3>Datenquellen <code style="font-size:0.8em">Services/GitService.swift</code></h3>
+<p>
+    <code>StatisticsViewModel.load()</code> holt zwei Rohdaten-Quellen parallel
+    (<code>async let</code>) und lässt sie anschließend rein funktional aggregieren:
+</p>
+<table>
+    <tr><th>Quelle</th><th>git-Kommando</th><th>Verwendung</th></tr>
+    <tr><td>Autoren</td><td><code>git shortlog -sne --all</code></td>
+        <td><code>RepositoryStatistics.parseShortlog(_:)</code></td></tr>
+    <tr><td>Zeitstempel</td><td><code>git log --all --pretty=format:%at</code></td>
+        <td><code>RepositoryStatistics.aggregate(...)</code></td></tr>
+</table>
+
+<h4>Autoren-Gruppierung nach E-Mail</h4>
+<p>
+    <code>parseShortlog</code> summiert Commits nicht nach Anzeigenamen, sondern nach
+    <strong>lowercased E-Mail-Adresse</strong> (Fallback: lowercased Name, falls keine
+    E-Mail vorhanden). Das verhindert, dass dieselbe Person durch abweichende
+    Schreibweise ihres Namens (oder Groß-/Kleinschreibung der E-Mail) mehrfach als
+    eigener Balken im Autoren-Chart erscheint — Korrektur aus Version 1.3. Das
+    Ergebnis ist absteigend nach <code>commitCount</code> sortiert.
+</p>
+
+<h4>aggregate(...) — abgeleitete Kennzahlen</h4>
+<p>
+    Reine, <code>nonisolated static</code> Funktion; verarbeitet die Zeitstempel-Zeilen
+    zu Monats-, Wochentags- und Stunden-Buckets sowie zusätzlichen KPIs:
+</p>
+<table>
+    <tr><th>Kennzahl</th><th>Berechnung</th></tr>
+    <tr><td>Monats-Buckets</td><td>Gruppiert nach <code>yyyy-MM</code>, Datum auf den
+        1. des Monats normalisiert.</td></tr>
+    <tr><td>Wochentags-Buckets</td><td><code>Calendar.component(.weekday:)</code>
+        (1 = So … 7 = Sa) wird auf ISO-8601 (1 = Mo … 7 = So) umgerechnet.</td></tr>
+    <tr><td>Bus Factor</td><td><code>computeBusFactor</code>: läuft die (absteigend
+        sortierte) Autorenliste kumulativ ab, bis ≥ 80 % der Commits erreicht sind;
+        gibt die dafür nötige Autorenzahl zurück.</td></tr>
+    <tr><td>Ø Tage/Commit</td><td>Zeitspanne zwischen erstem und letztem Commit,
+        geteilt durch <code>(Anzahl Commits − 1)</code>.</td></tr>
+    <tr><td>Längste Streak</td><td><code>longestDailyStreak</code>: dedupliziert
+        Commit-Zeitpunkte auf Kalendertage, sortiert sie und sucht die längste Folge
+        aufeinanderfolgender Tage.</td></tr>
+    <tr><td>Aktivster Monat/Wochentag</td><td>Einfaches Maximum über die jeweiligen
+        Buckets; Wochentag liefert <code>nil</code>, wenn alle Buckets 0 sind.</td></tr>
+</table>
+<p>
+    Da <code>aggregate</code> ausschließlich mit bereits geladenen Strings/Zahlen
+    rechnet, ist keine Actor-Isolation nötig — die Funktion lässt sich direkt aus dem
+    <code>GitService</code>-Actor-Kontext heraus aufrufen, ohne Hop auf den Main Actor.
 </p>
 
 <hr>

@@ -244,6 +244,13 @@ final class AppModel {
         repoStatus[repoID] = st
     }
 
+    // TODO: pollRemotes() überspringt Repositories ohne gespeicherte remoteURL, d.h.
+    // über "Repository hinzufügen" eingebundene Repos bekommen nie einen automatischen
+    // Remote-Check (nur lokale FSEvents-Erkennung) — der manuelle "Vom Server prüfen"-Button
+    // (RepositoryViewModel.fetch) funktioniert für diese Repos aber problemlos über den
+    // lokal konfigurierten Remote-Namen. Aktuell bewusst so gelassen (Stand 2026-09-15);
+    // falls gewünscht: guard auf GitService.firstRemoteName() statt bookmark.remoteURL
+    // umstellen, analog zum manuellen Fetch-Pfad.
     private func pollRemotes(repos: [RepositoryBookmark]) async {
         for repo in repos {
             guard !Task.isCancelled else { break }

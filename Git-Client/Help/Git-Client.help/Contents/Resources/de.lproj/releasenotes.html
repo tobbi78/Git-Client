@@ -21,11 +21,43 @@
 <nav class="page-toc">
     <p>Inhalt</p>
     <ol>
+        <li><a href="#v1_3">Version 1.3</a></li>
         <li><a href="#v1_2">Version 1.2</a></li>
         <li><a href="#v1_1">Version 1.1</a></li>
         <li><a href="#v1_0">Version 1.0</a></li>
     </ol>
 </nav>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="v1_3">Version 1.3</h2>
+
+<h3>Neu: Repository-Statuszeile in der Übersichtsliste</h3>
+<p>
+    Jeder Eintrag in der Repository-Übersicht zeigt jetzt direkt den aktuellen
+    <strong>Branch</strong>, ob Commits gegenüber dem Remote <strong>ahead/behind</strong>
+    sind, ob es <strong>unkommittete Änderungen</strong> gibt sowie das Datum des letzten
+    Commits — ganz ohne das Repository zu öffnen.
+</p>
+
+<h3>Neu: Repository-Statistiken in einem eigenen Fenster</h3>
+<p>
+    Über die Toolbar lässt sich pro Repository ein eigenes Statistik-Fenster öffnen. Es
+    zeigt Kennzahlen wie Bus-Faktor, aktivsten Monat/Wochentag und durchschnittlichen
+    Commit-Abstand als KPI-Kacheln — zur besseren Orientierung in thematische, umrahmte
+    Gruppen gegliedert — sowie ein Autoren-Chart und Verteilungen nach Monat, Wochentag
+    und Uhrzeit.
+</p>
+
+<h3>Fehlerbehebungen</h3>
+<ul>
+    <li>Der Wechsel des Erscheinungsbilds (Hell/Dunkel/Wie System) greift jetzt sofort
+        und zuverlässig — vorher blieb die Anzeige teils bis zu einem Fokuswechsel im
+        alten Zustand.</li>
+    <li>Autoren-Chart in den Statistiken: Autoren werden jetzt korrekt nach
+        E-Mail-Adresse statt nach Name gruppiert, wodurch dieselbe Person nicht mehr
+        mehrfach als eigener Balken erschien; Sortierung und Balkendarstellung wurden
+        ebenfalls korrigiert.</li>
+</ul>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="v1_2">Version 1.2</h2>
@@ -66,10 +98,13 @@
 
 <h3>Neu: Automatische Erkennung neuer Commits</h3>
 <p>
-    Git-Client beobachtet Repositories im Hintergrund (FSEvents lokal) und fragt den Server
-    periodisch per <code>git ls-remote</code> ab — <strong>ohne Download</strong>. Neue
-    Commits erscheinen als Badge in der Übersicht und als Hinweis-Banner im geöffneten
-    Repository. Intervall und Aktivierung unter <strong>Einstellungen › Aktualisierung</strong>.
+    Git-Client beobachtet Repositories im Hintergrund (FSEvents lokal) und gleicht per
+    <code>git fetch</code> periodisch den Server-Stand ab. Neue Commits erscheinen als
+    Badge in der Übersicht und als Hinweis-Banner im geöffneten Repository. Der
+    Remote-Abgleich läuft nur für Repositories, die über „Klonen" hinzugefügt wurden
+    (gespeicherte Remote-URL); über „Repository hinzufügen" eingebundene Repositories
+    erhalten nur die lokale Erkennung. Intervall und Aktivierung unter
+    <strong>Einstellungen › Aktualisierung</strong>.
 </p>
 
 <h3>Neu: Zeilennummern im Diff</h3>

@@ -137,7 +137,7 @@ extension RepositoryStatistics {
         // Commits pro E-Mail-Adresse summieren (gleiche Adresse, verschiedene Namen → ein Eintrag)
         var buckets: [String: Int] = [:]
         for entry in raw {
-            let key = entry.email.isEmpty ? entry.name : entry.email
+            let key = (entry.email.isEmpty ? entry.name : entry.email).lowercased()
             buckets[key, default: 0] += entry.count
         }
 

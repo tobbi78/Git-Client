@@ -125,23 +125,25 @@ struct StatisticsView: View {
         _ title: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.callout.bold())
-                .foregroundStyle(Color.primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            Divider()
-            LazyVGrid(columns: kpiColumns, spacing: 12) {
-                content()
-            }
-            .padding(16)
+        LazyVGrid(columns: kpiColumns, spacing: 12) {
+            content()
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .padding(.top, 24)
         .overlay {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(alignment: .topLeading) {
+            Text(title)
+                .font(.callout.bold())
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 6)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .offset(x: 14, y: -10)
+        }
+        .padding(.top, 10)
     }
 
     // MARK: - Autoren

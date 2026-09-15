@@ -7,10 +7,6 @@
 
 import SwiftUI
 
-// TODO: App-Icon wird auf macOS 26 (Tahoe/Liquid Glass) im Dock nicht korrekt angezeigt.
-// Bisherige Schritte: CFBundleIconName gesetzt, PNGs mit Alpha-Kanal (Opaque: False),
-// korrekte Pixelgrößen via CGContext. Nächster Ansatz: .iconcomposer-Format (Icon Composer)
-// oder vollflächige (nicht vorgeschnittene) Icons testen.
 @main
 struct Git_ClientApp: App {
     @State private var appModel = AppModel()

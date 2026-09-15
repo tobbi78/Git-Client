@@ -191,11 +191,11 @@
 				};
 			};
 			buildConfigurationList = 89299BFB3052E48600FC7F81 /* Build configuration list for PBXProject "Git-Client" */;
-			developmentRegion = en;
+			developmentRegion = de;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
 				Base,
+				de,
 			);
 			mainGroup = 89299BF73052E48600FC7F81;
 			minimizedProjectReferenceProxies = 1;

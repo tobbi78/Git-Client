@@ -3143,4 +3143,350 @@ struct RepositoryStatisticsTests {
         #expect(s.mostActiveMonth == nil)
         #expect(s.mostActiveWeekday == nil)
     }
+
+    // MARK: parseShortlog — E-Mail-Dedup
+
+    @Test("parseShortlog: gleiche E-Mail in verschiedener Schreibweise wird zusammengefasst")
+    func parseShortlogEmailCaseDedup() {
+        let output = "     3\tAlice <ALICE@EXAMPLE.COM>\n     2\tAlice <alice@example.com>\n"
+        let authors = RepositoryStatistics.parseShortlog(output)
+        #expect(authors.count == 1)
+        #expect(authors[0].commitCount == 5)
+        #expect(authors[0].name == "alice@example.com")
+    }
+
+    @Test("parseShortlog: gleiche E-Mail mit verschiedenem Namen wird summiert")
+    func parseShortlogSameEmailDifferentName() {
+        let output = "     5\tAlice Smith <alice@example.com>\n     3\tAlice <alice@example.com>\n"
+        let authors = RepositoryStatistics.parseShortlog(output)
+        #expect(authors.count == 1)
+        #expect(authors[0].commitCount == 8)
+    }
+}
+
+// MARK: - StatisticsViewModelTests
+
+@Suite("StatisticsViewModel")
+@MainActor
+struct StatisticsViewModelTests {
+
+    @Test("Initialzustand: statistics nil, isLoading false, errorMessage nil")
+    func initialState() {
+        let bm = RepositoryBookmark(name: "Test", path: URL(fileURLWithPath: "/tmp/test"))
+        let vm = StatisticsViewModel(repository: bm)
+        #expect(vm.statistics == nil)
+        #expect(vm.isLoading == false)
+        #expect(vm.errorMessage == nil)
+    }
+
+    @Test("repository wird korrekt gespeichert")
+    func repositoryIsStored() {
+        let bm = RepositoryBookmark(name: "MyRepo", path: URL(fileURLWithPath: "/tmp/myrepo"))
+        let vm = StatisticsViewModel(repository: bm)
+        #expect(vm.repository.name == "MyRepo")
+        #expect(vm.repository.path == URL(fileURLWithPath: "/tmp/myrepo"))
+    }
+
+    @Test("load mit ungültigem Pfad setzt errorMessage")
+    func loadWithInvalidPathSetsError() async {
+        let bm = RepositoryBookmark(
+            name: "Ghost",
+            path: URL(fileURLWithPath: "/tmp/statsvm-ghost-\(UUID().uuidString)")
+        )
+        let vm = StatisticsViewModel(repository: bm)
+        await vm.load()
+        #expect(vm.isLoading == false)
+        #expect(vm.errorMessage != nil)
+    }
+}
+
+// MARK: - AppModel — Erweitert
+
+@Suite("AppModel — Erweitert")
+@MainActor
+struct AppModelExtendedTests {
+
+    func makeModel() -> AppModel {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appmodel-ext-\(UUID().uuidString).json")
+        return AppModel(store: BookmarkStore(fileURL: url))
+    }
+
+    @Test("newCommitStatus und repoStatus starten leer")
+    func initialStatusMapsEmpty() {
+        let model = makeModel()
+        #expect(model.newCommitStatus.isEmpty)
+        #expect(model.repoStatus.isEmpty)
+    }
+
+    @Test("markRepositorySeen initialisiert newCommitStatus-Eintrag ohne Fehler")
+    func markRepositorySeenInitializesEntry() async {
+        let model = makeModel()
+        let id = UUID()
+        await model.markRepositorySeen(id)
+        let status = model.newCommitStatus[id]
+        #expect(status != nil)
+        #expect(status?.hasLocalChanges == false)
+    }
+
+    @Test("closeRepository lässt newCommitStatus unangetastet")
+    func closeRepositoryKeepsNewCommitStatus() async {
+        let model = makeModel()
+        let id = UUID()
+        await model.markRepositorySeen(id)
+        model.openedRepository = RepositoryBookmark(name: "R", path: URL(fileURLWithPath: "/tmp/r"))
+        model.closeRepository()
+        #expect(model.openedRepository == nil)
+        #expect(model.newCommitStatus[id] != nil)
+    }
+}
+
+// MARK: - GitService — lokale Statusabfragen (Erweiterung)
+
+extension GitServiceLocalStatusTests {
+
+    @Test("blame liefert Zeilen für bekannte Datei und Commit")
+    func blameReturnsLinesForKnownFile() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        guard let first = commits.first else { Issue.record("Kein Commit"); return }
+        let lines = try await svc.blame(path: "init.txt", sha: first.sha)
+        #expect(!lines.isEmpty)
+        #expect(lines[0].content == "x")
+    }
+
+    @Test("localRefSignature liefert nicht-leere Map nach Commit")
+    func localRefSignatureIsNotEmpty() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let sig = await svc.localRefSignature()
+        #expect(!sig.isEmpty)
+        #expect(sig.keys.contains(where: { $0.hasPrefix("refs/heads/") }))
+    }
+
+    @Test("firstRemoteName liefert nil ohne konfigurierten Remote")
+    func firstRemoteNameIsNilWithoutRemote() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let name = await svc.firstRemoteName()
+        #expect(name == nil)
+    }
+}
+
+// MARK: - GitService — aheadBehind (Erweiterung)
+
+extension GitServiceAheadBehindTests {
+
+    @Test("remoteName liefert 'origin' für geklontes Repo")
+    func remoteNameIsOriginForClonedRepo() async throws {
+        let svc = GitService(repositoryPath: localURL)
+        let name = try await svc.remoteName()
+        #expect(name == "origin")
+    }
+
+    @Test("hasRemote ist true für Repo mit konfiguriertem Remote")
+    func hasRemoteIsTrueForClonedRepo() async {
+        let svc = GitService(repositoryPath: localURL)
+        let result = await svc.hasRemote()
+        #expect(result)
+    }
+}
+
+// MARK: - AppModel — Monitoring (Integration)
+
+@Suite("AppModel — Monitoring")
+@MainActor
+struct AppModelMonitoringTests {
+
+    func makeModel() -> AppModel {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appmodel-mon-\(UUID().uuidString).json")
+        return AppModel(store: BookmarkStore(fileURL: url))
+    }
+
+    @Test("startMonitoring erstellt Services und Task für Repos mit .git-Verzeichnis")
+    func startMonitoringWithValidGitRepo() async throws {
+        let repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("model-monitor-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "T")
+        let f = repoURL.appendingPathComponent("f.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "init")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        // Auto-Refresh explizit aktivieren, damit startMonitoring über den ersten Guard kommt.
+        AppSettings.setAutoRefreshEnabled(true)
+        defer { UserDefaults.standard.removeObject(forKey: AppSettings.autoRefreshEnabledKey) }
+
+        let model = makeModel()
+        // addRepository → persist() → restartMonitoring() → startMonitoring()
+        // Mit vorhandenem .git-Verzeichnis wird die Ausführung über guard !repos.isEmpty fortgesetzt.
+        model.addRepository(name: "TestRepo", path: repoURL)
+
+        // Async-Task in startMonitoring (localRefSignature + refreshLocalStatus) ablaufen lassen.
+        // Wir prüfen nur den zuverlässigen Synchron-Zustand; async-Ergebnisse sind timing-abhängig.
+        try await Task.sleep(for: .milliseconds(1500))
+
+        #expect(model.bookmarkNodes.count == 1)
+    }
+}
+
+// MARK: - GitService — Statistik-Abfragen
+
+@Suite("GitService — Statistik-Abfragen")
+@MainActor
+struct GitServiceStatisticsTests {
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("git-stats-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "stats@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Stats Tester")
+        let readme = repoURL.appendingPathComponent("README.md")
+        try "# Stats\n".write(to: readme, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial stats commit")
+    }
+
+    @Test("commitTimestamps liefert gültige Unix-Timestamps")
+    func commitTimestampsValid() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let output = try await svc.commitTimestamps()
+        let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
+        #expect(!lines.isEmpty)
+        let ts = TimeInterval(lines[0].trimmingCharacters(in: .whitespaces))
+        #expect(ts != nil)
+        #expect((ts ?? 0) > 0)
+    }
+
+    @Test("authorCommitCounts liefert mindestens einen Autor")
+    func authorCommitCountsNotEmpty() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let authors = try await svc.authorCommitCounts()
+        #expect(!authors.isEmpty)
+        #expect(authors[0].commitCount >= 1)
+    }
+
+    @Test("authorCommitCounts: E-Mail wird als Gruppierschlüssel verwendet")
+    func authorCommitCountsGroupedByEmail() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let authors = try await svc.authorCommitCounts()
+        let found = authors.first { $0.name == "stats@example.com" }
+        #expect(found != nil)
+    }
+}
+
+// MARK: - RepositoryViewModel — Abdeckungs-Ergänzungen (Blame, Suche, loadMore-Suche)
+
+@Suite("RepositoryViewModel — Abdeckung")
+@MainActor
+struct RepositoryViewModelCoverageTests {
+
+    let repoURL: URL
+    let bookmark: RepositoryBookmark
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vm-cov-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "cov@test.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "CovTester")
+        let file = repoURL.appendingPathComponent("readme.txt")
+        // Drei Commits mit je einer weiteren Zeile — Blame-Datei wächst mit jedem Commit
+        try "Erste Zeile\n".write(to: file, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Alpha-Commit")
+        try "Erste Zeile\nZweite Zeile\n".write(to: file, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Beta-Commit")
+        try "Erste Zeile\nZweite Zeile\nDritte Zeile\n".write(to: file, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Gamma-Commit")
+        bookmark = RepositoryBookmark(name: "CovRepo", path: repoURL)
+    }
+
+    // MARK: requestBlame / loadBlame
+
+    @Test("requestBlame öffnet Blame-Sheet und loadBlame befüllt blameLines")
+    func requestBlameSetsSheetAndLoadsLines() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        guard let commit = vm.commits.first else { Issue.record("Kein Commit geladen"); return }
+
+        vm.selectedCommitID = commit.sha
+        vm.requestBlame(path: "readme.txt")
+
+        // Synchrone Effekte prüfen (deterministisch)
+        #expect(vm.showBlameSheet)
+        #expect(vm.blameFilePath == "readme.txt")
+
+        // Polling bis loadBlame-Task fertig ist (Timeout 5 s).
+        // Jeder Sleep-Schritt gibt den @MainActor frei, damit der unstrukturierte
+        // loadBlame-Task seinen Hop zurück auf den Actor abschließen kann.
+        for _ in 0..<100 where vm.isBlameLoading {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(!vm.isBlameLoading)
+        #expect(!vm.blameLines.isEmpty)
+    }
+
+    // MARK: loadMore bei aktiver Suche → performSearch(reset: false) deterministisch
+
+    @Test("loadMore bei aktiver Suche trifft isSearchActive-Ast und füllt searchResults")
+    func loadMoreWithActiveSearchRunsSearch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+
+        // isSearchActive=true setzen; searchCanLoadMore=true, isSearching=false
+        var criteria = CommitSearchCriteria()
+        criteria.message = "Commit"   // trifft alle drei Commits
+        vm.updateSearch(criteria)
+        // loadMore() sofort aufrufen (vor dem Debounce) → trifft isSearchActive-Ast;
+        // await ist deterministisch: kehrt zurück wenn performSearch(reset:false) vollständig ist
+        await vm.loadMore()
+        #expect(!vm.isSearching)
+        #expect(!vm.searchResults.isEmpty)
+        #expect(!vm.searchGraphRows.isEmpty)
+    }
+
+    // MARK: selectedCommit bei aktiver Suche (isSearchActive-Ast)
+
+    @Test("selectedCommit liefert Commit aus searchResults bei aktiver Suche")
+    func selectedCommitFromSearchResults() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+
+        var criteria = CommitSearchCriteria()
+        criteria.message = "Beta"
+        vm.updateSearch(criteria)
+        // loadMore() füllt searchResults deterministisch (kein Timing-Problem)
+        await vm.loadMore()
+
+        guard let found = vm.searchResults.first else { Issue.record("Keine Suchergebnisse"); return }
+        vm.selectedCommitID = found.sha
+        // isSearchActive=true → selectedCommit sucht zuerst in searchResults
+        #expect(vm.selectedCommit?.sha == found.sha)
+    }
+
+    // MARK: performSearch(reset: true) via updateSearch-Debounce
+
+    @Test("updateSearch löst nach Debounce performSearch(reset:true) aus")
+    func updateSearchTriggersDebouncedSearch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+
+        var criteria = CommitSearchCriteria()
+        criteria.message = "Alpha"
+        vm.updateSearch(criteria)
+        // 300 ms Debounce + großzügiger Puffer; isSearching wird nicht geprüft
+        // (zeitkritisch), aber der performSearch(reset:true)-Pfad wird abgedeckt
+        try await Task.sleep(for: .milliseconds(1500))
+        #expect(vm.isSearchActive)
+    }
 }

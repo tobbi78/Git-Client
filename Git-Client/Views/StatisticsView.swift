@@ -157,7 +157,7 @@ struct StatisticsView: View {
             Chart(top) { author in
                 BarMark(
                     x: .value("Commits", author.commitCount),
-                    y: .value("Autor", author.id)   // id = E-Mail (eindeutig) verhindert Stapelung bei gleichem Namen
+                    y: .value("Autor", author.name)  // name = E-Mail, eindeutig nach Gruppierung
                 )
                 .foregroundStyle(Color.accentColor.gradient)
                 .annotation(position: .trailing, spacing: 6) {
@@ -166,19 +166,9 @@ struct StatisticsView: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .chartYScale(domain: domain.map { name in
-                top.first(where: { $0.name == name })?.id ?? name
-            })
+            .chartYScale(domain: domain)
             .chartYAxis {
-                AxisMarks { value in
-                    AxisValueLabel {
-                        if let id = value.as(String.self),
-                           let author = top.first(where: { $0.id == id }) {
-                            Text(author.name)
-                                .font(.caption)
-                        }
-                    }
-                }
+                AxisMarks { _ in AxisValueLabel() }
             }
             .frame(height: CGFloat(top.count) * 30 + 20)
         }

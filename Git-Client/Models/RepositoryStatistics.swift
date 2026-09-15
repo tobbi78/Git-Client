@@ -134,17 +134,26 @@ extension RepositoryStatistics {
             }
         }
 
-        let total = raw.reduce(0) { $0 + $1.count }
+        // Commits pro E-Mail-Adresse summieren (gleiche Adresse, verschiedene Namen → ein Eintrag)
+        var buckets: [String: Int] = [:]
+        for entry in raw {
+            let key = entry.email.isEmpty ? entry.name : entry.email
+            buckets[key, default: 0] += entry.count
+        }
+
+        let total = buckets.values.reduce(0, +)
         guard total > 0 else { return [] }
 
-        return raw.sorted { $0.count > $1.count }.map { entry in
-            AuthorStat(
-                name: entry.name,
-                email: entry.email,
-                commitCount: entry.count,
-                percentage: Double(entry.count) / Double(total) * 100
-            )
-        }
+        return buckets
+            .map { key, count in
+                AuthorStat(
+                    name: key,
+                    email: key.contains("@") ? key : "",
+                    commitCount: count,
+                    percentage: Double(count) / Double(total) * 100
+                )
+            }
+            .sorted { $0.commitCount > $1.commitCount }
     }
 
     /// Aggregiert alle Statistiken aus Unix-Timestamp-Zeilen (`git log --all --pretty=%at`)

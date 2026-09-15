@@ -1001,7 +1001,7 @@ struct GitServiceParserTests {
     @Test("parseBranches parst lokalen Branch")
     func localBranch() async {
         let output = "refs/heads/main\tabc123\t*\n"
-        let branches = await service.parseBranches(from: output)
+        let branches = service.parseBranches(from: output)
         #expect(branches.count == 1)
         #expect(branches[0].name == "main")
         #expect(branches[0].tipSha == "abc123")
@@ -1012,7 +1012,7 @@ struct GitServiceParserTests {
     @Test("parseBranches parst nicht-aktuellen Branch")
     func nonCurrentBranch() async {
         let output = "refs/heads/feature/xyz\tdef456\t \n"
-        let branches = await service.parseBranches(from: output)
+        let branches = service.parseBranches(from: output)
         #expect(branches.count == 1)
         #expect(branches[0].name == "feature/xyz")
         #expect(!branches[0].isCurrent)
@@ -1021,7 +1021,7 @@ struct GitServiceParserTests {
     @Test("parseBranches parst Remote-Branch")
     func remoteBranch() async {
         let output = "refs/remotes/origin/main\t789abc\t \n"
-        let branches = await service.parseBranches(from: output)
+        let branches = service.parseBranches(from: output)
         #expect(branches.count == 1)
         #expect(branches[0].isRemote)
         #expect(branches[0].remoteName == "origin")
@@ -1031,14 +1031,14 @@ struct GitServiceParserTests {
     @Test("parseBranches überspringt refs/remotes/origin/HEAD")
     func skipsRemoteHEAD() async {
         let output = "refs/remotes/origin/HEAD\tabc123\t \n"
-        let branches = await service.parseBranches(from: output)
+        let branches = service.parseBranches(from: output)
         #expect(branches.isEmpty)
     }
 
     @Test("parseBranches ignoriert leere Zeilen")
     func emptyLinesIgnored() async {
         let output = "\nrefs/heads/main\tabc\t*\n\n"
-        let branches = await service.parseBranches(from: output)
+        let branches = service.parseBranches(from: output)
         #expect(branches.count == 1)
     }
 
@@ -1049,7 +1049,7 @@ struct GitServiceParserTests {
         refs/heads/develop\tbbb\t
         refs/remotes/origin/main\taaa\t
         """
-        let branches = await service.parseBranches(from: output)
+        let branches = service.parseBranches(from: output)
         #expect(branches.count == 3)
     }
 

@@ -152,8 +152,8 @@ struct StatisticsView: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader("Commits pro Autor")
             let top = Array(s.authors.prefix(15))
-            // y-Achse geht in Charts von unten nach oben; umgekehrte Domain → meiste Commits oben
-            let domainTopToBottom = top.reversed().map { $0.name }
+            // Swift Charts rendert domain[0] oben → absteigend sortiertes Array direkt verwenden
+            let domain = top.map { $0.name }
             Chart(top) { author in
                 BarMark(
                     x: .value("Commits", author.commitCount),
@@ -166,7 +166,7 @@ struct StatisticsView: View {
                         .foregroundStyle(Color.secondary)
                 }
             }
-            .chartYScale(domain: domainTopToBottom)
+            .chartYScale(domain: domain)
             .chartYAxis {
                 AxisMarks { _ in AxisValueLabel() }
             }

@@ -661,7 +661,13 @@ struct MainWindowView: View {
                 commit: commit,
                 diff: vm?.currentDiff,
                 isLoading: vm?.isDiffLoading ?? false,
-                onBlameRequest: { path in vm?.requestBlame(path: path) }
+                onBlameRequest: { path in vm?.requestBlame(path: path) },
+                onRevealInFinder: { path in
+                    NSWorkspace.shared.selectFile(
+                        repository.path.appendingPathComponent(path).path,
+                        inFileViewerRootedAtPath: repository.path.path
+                    )
+                }
             )
             .sheet(isPresented: Binding(
                 get: { vm?.showBlameSheet ?? false },

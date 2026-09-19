@@ -18,6 +18,10 @@ struct DiffView: View {
     /// Wird aufgerufen, wenn der Nutzer „Blame anzeigen" im Kontextmenü wählt.
     var onBlameRequest: ((String) -> Void)? = nil
 
+    /// Wird aufgerufen, wenn der Nutzer „Im Finder zeigen" im Kontextmenü wählt.
+    /// Erhält den repo-relativen Pfad (analog zu onBlameRequest).
+    var onRevealInFinder: ((String) -> Void)? = nil
+
     // JIRA-Konfiguration — reagiert automatisch auf Einstellungsänderungen
     @AppStorage(AppSettings.jiraBaseURLKey) private var jiraBaseURL: String = ""
 
@@ -188,12 +192,19 @@ struct DiffView: View {
             }
             .tag(file.id)
             .contextMenu {
-                // Blame nur für existierende Dateien (nicht für gelöschte)
+                // Blame und "Im Finder zeigen" nur für existierende Dateien (nicht für gelöschte)
                 if !file.isDeleted, let blameRequest = onBlameRequest {
                     Button {
                         blameRequest(file.newPath)
                     } label: {
                         Label("Blame anzeigen", systemImage: "clock.arrow.circlepath")
+                    }
+                }
+                if !file.isDeleted, let revealRequest = onRevealInFinder {
+                    Button {
+                        revealRequest(file.newPath)
+                    } label: {
+                        Label("Im Finder zeigen", systemImage: "folder")
                     }
                 }
             }

@@ -103,6 +103,18 @@ struct DiffView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            Button {
+                ClipboardService.copy(commit.sha)
+            } label: {
+                Label("SHA kopieren", systemImage: "doc.on.doc")
+            }
+            Button {
+                ClipboardService.copy(commit.subject)
+            } label: {
+                Label("Commit-Nachricht kopieren", systemImage: "doc.on.doc")
+            }
+        }
     }
 
     // MARK: - Diff-Inhalt (Dateiliste + Patch)

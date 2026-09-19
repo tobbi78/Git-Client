@@ -214,6 +214,13 @@ struct MainWindowView: View {
                         .font(.callout)
                         .contentShape(Rectangle())
                         .onTapGesture { vm?.selectCommit(bySha: tag.targetSha) }
+                        .contextMenu {
+                            Button {
+                                ClipboardService.copy(tag.name)
+                            } label: {
+                                Label("Tag-Namen kopieren", systemImage: "doc.on.doc")
+                            }
+                        }
                 }
             } label: {
                 Label("Tags", systemImage: "tag")
@@ -722,6 +729,13 @@ private struct BranchRowView: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }
+        .contextMenu {
+            Button {
+                ClipboardService.copy(branch.name)
+            } label: {
+                Label("Branch-Namen kopieren", systemImage: "doc.on.doc")
+            }
+        }
     }
 }
 
@@ -759,6 +773,18 @@ private struct CommitRowView: View {
             }
         }
         .padding(.vertical, 1)
+        .contextMenu {
+            Button {
+                ClipboardService.copy(commit.sha)
+            } label: {
+                Label("SHA kopieren", systemImage: "doc.on.doc")
+            }
+            Button {
+                ClipboardService.copy(commit.subject)
+            } label: {
+                Label("Commit-Nachricht kopieren", systemImage: "doc.on.doc")
+            }
+        }
     }
 
     private var refBadges: some View {

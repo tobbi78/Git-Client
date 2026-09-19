@@ -164,5 +164,12 @@ private struct BlameRowView: View {
         .frame(minWidth: minWidth, alignment: .leading)
         .padding(.vertical, 1)
         .background(Color.clear)
+        .contextMenu {
+            Button {
+                ClipboardService.copy(line.sha)
+            } label: {
+                Label("SHA kopieren", systemImage: "doc.on.doc")
+            }
+        }
     }
 }

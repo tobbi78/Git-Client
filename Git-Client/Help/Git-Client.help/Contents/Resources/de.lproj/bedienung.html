@@ -22,6 +22,7 @@
     <p>Inhalt</p>
     <ol>
         <li><a href="#uebersicht">Überblick</a></li>
+        <li><a href="#befehlspalette">Befehlspalette (⌘K)</a></li>
         <li><a href="#repositories">Repositories verwalten</a></li>
         <li><a href="#graph">Commit-History &amp; Graph lesen</a></li>
         <li><a href="#suche">Commits durchsuchen &amp; filtern</a></li>
@@ -51,6 +52,23 @@
     <tr><td>Commit-Liste (rechts oben)</td><td>Graph + Commit-Zeilen, Suche/Filter</td></tr>
     <tr><td>Diff (rechts unten)</td><td>Geänderter Code des ausgewählten Commits</td></tr>
 </table>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="befehlspalette">Befehlspalette (⌘K)</h2>
+
+<p>
+    Mit <strong>⌘K</strong> öffnest du jederzeit eine Spotlight-artige Befehlspalette.
+    Sie durchsucht immer alle Repository-Bookmarks (zum Öffnen/Wechseln) und —
+    sobald ein Repository geöffnet ist — zusätzlich dessen bereits geladene
+    <strong>Branches</strong>, <strong>Tags</strong> und <strong>Commits</strong>.
+</p>
+<ul>
+    <li><strong>Tippen</strong> filtert die Trefferliste (Teilstring, unabhängig von
+        Groß-/Kleinschreibung).</li>
+    <li><strong>↑/↓</strong> bewegen die Auswahl, <strong>⏎</strong> oder ein Klick
+        öffnet das Repository bzw. springt zum Branch/Tag/Commit.</li>
+    <li><strong>Esc</strong> oder ein Klick außerhalb schließt die Palette.</li>
+</ul>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="repositories">Repositories verwalten</h2>
@@ -191,6 +209,10 @@
     Klicke auf eine Zeile, um den Commit auszuwählen. Im unteren Bereich erscheint
     automatisch der Diff dieses Commits.
 </p>
+<p>
+    Ein <strong>Rechtsklick</strong> auf eine Commit-Zeile bietet „SHA kopieren" und
+    „Commit-Nachricht kopieren" an.
+</p>
 
 <h3 id="lazyladen">Große Repositories: Lazy Loading</h3>
 <p>
@@ -249,6 +271,8 @@
     <li>Ein <strong>Klick</strong> auf einen Branch oder Tag springt direkt zum
         zugehörigen Commit in der Liste — die Liste scrollt automatisch dorthin,
         und der Diff des Commits wird unten geladen.</li>
+    <li>Ein <strong>Rechtsklick</strong> bietet „Branch-Namen kopieren" bzw.
+        „Tag-Namen kopieren" an.</li>
 </ul>
 
 <div class="tip">
@@ -275,6 +299,10 @@
     Der <strong>Trennbalken</strong> zwischen Commit-Liste und Diff lässt sich mit
     der Maus verschieben, um den Platz nach Bedarf aufzuteilen.
 </p>
+<p>
+    Ein <strong>Rechtsklick</strong> auf den Commit-Kopfbereich (Betreff, Nachricht,
+    Autor, Datum) bietet ebenfalls „SHA kopieren" und „Commit-Nachricht kopieren" an.
+</p>
 
 <h3>Zeilennummern</h3>
 <p>
@@ -296,8 +324,9 @@
 <h3>Datei-Kontextmenü</h3>
 <p>
     Ein <strong>Rechtsklick</strong> auf eine Datei in der Dateiliste des Commit-Details
-    bietet zusätzliche Aktionen — u.a. <strong>„Blame anzeigen"</strong> (nicht verfügbar
-    für gelöschte Dateien, siehe nächster Abschnitt).
+    bietet zusätzliche Aktionen an — <strong>„Blame anzeigen"</strong> (siehe nächster
+    Abschnitt) und <strong>„Im Finder zeigen"</strong>. Beide sind nicht verfügbar für
+    gelöschte Dateien, da es dafür keine aktuelle Datei im Arbeitsverzeichnis gibt.
 </p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -322,7 +351,8 @@
 </table>
 <p>
     Ein <strong>Klick auf eine Commit-SHA</strong> in der Blame-Ansicht springt in der
-    Hauptliste direkt zu diesem Commit.
+    Hauptliste direkt zu diesem Commit. Ein <strong>Rechtsklick</strong> auf eine
+    Zeile bietet „SHA kopieren" an.
 </p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->

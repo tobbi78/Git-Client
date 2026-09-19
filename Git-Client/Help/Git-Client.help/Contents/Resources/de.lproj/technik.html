@@ -32,6 +32,7 @@
         <li><a href="#keychain">Sicherheitskonzept Credentials</a></li>
         <li><a href="#monitoring">Auto-Refresh &amp; Repository-Status-Monitoring</a></li>
         <li><a href="#statistiken">RepositoryStatistics-Aggregation</a></li>
+        <li><a href="#befehlspalette">CommandPaletteResult — Suche</a></li>
     </ol>
 </nav>
 
@@ -681,6 +682,44 @@ git log --all --date-order --pretty=format:… -2000 --skip=2000
     Da <code>aggregate</code> ausschließlich mit bereits geladenen Strings/Zahlen
     rechnet, ist keine Actor-Isolation nötig — die Funktion lässt sich direkt aus dem
     <code>GitService</code>-Actor-Kontext heraus aufrufen, ohne Hop auf den Main Actor.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="befehlspalette">CommandPaletteResult — Suche <code style="font-size:0.8em">Models/CommandPaletteResult.swift</code></h2>
+
+<p>
+    Die Befehlspalette (⌘K) ist bewusst als reine, <code>nonisolated</code> Wertetyp-
+    plus-Funktion aufgebaut, ohne eigenen View-State in der Suchlogik selbst — dadurch
+    vollständig ohne SwiftUI-Kontext testbar (7 Unit-Tests).
+</p>
+<pre>
+static func search(
+    query: String,
+    repositories: [RepositoryBookmark],
+    branches: [Branch],
+    tags: [GitTag],
+    commits: [Commit],
+    limitPerCategory: Int = 8
+) -> [CommandPaletteResult]
+</pre>
+<ul>
+    <li>Repositories werden <strong>immer</strong> durchsucht (auch bei leerer Suche —
+        zeigt dann alle Bookmarks). Branches/Tags/Commits nur bei nicht-leerer Suche,
+        und nur die bereits von <code>RepositoryViewModel</code> geladenen Daten — kein
+        zusätzlicher <code>git</code>-Aufruf.</li>
+    <li>Matching ist einfaches, case-insensitives Teilstring-Matching (kein
+        Fuzzy-Subsequence-Scoring wie bei Sublime/VS-Code Quick-Open) — bewusst simpel
+        gehalten.</li>
+    <li><code>limitPerCategory</code> begrenzt die Trefferzahl pro Kategorie
+        (Standard: 8), damit die Liste bei vielen Treffern übersichtlich bleibt.</li>
+</ul>
+<p>
+    <code>CommandPaletteView</code> nutzt bewusst eine eigene <code>ScrollView</code> +
+    <code>LazyVStack</code> statt <code>List</code> (Konsistenz mit
+    <code>RepositoryBrowserView</code>) und implementiert Pfeiltasten-Navigation über
+    <code>onMoveCommand(perform:)</code> sowie Schließen über
+    <code>onExitCommand(perform:)</code> — beide Standard-SwiftUI-APIs für
+    Tastatur-getriebene macOS-Oberflächen.
 </p>
 
 <hr>

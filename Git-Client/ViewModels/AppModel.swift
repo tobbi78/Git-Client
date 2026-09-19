@@ -15,6 +15,10 @@ final class AppModel {
     var openedRepository: RepositoryBookmark? = nil
     var repositoryViewModel: RepositoryViewModel? = nil
 
+    /// Sichtbarkeit der Befehlspalette (⌘K) — an/aus, unabhängig davon, ob ein
+    /// Repository geöffnet ist. Siehe CommandPaletteView.
+    var isCommandPaletteOpen = false
+
     // MARK: - Auto-Refresh
 
     /// Aktueller Neuigkeiten-Stand pro Repository-ID.

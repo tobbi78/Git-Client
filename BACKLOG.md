@@ -20,7 +20,7 @@ einfach wegzulassen.
 | # | Status | Idee | Kategorie | Aufwand | Warum jetzt |
 |---|---|---|---|---|---|
 | 1 | Offen | **Tastatur-Bedienung nachrüsten**: ⌘R (neu laden), ⌘F (Suche fokussieren), ↑/↓-Navigation in der Commit-Liste, ⌘C (SHA kopieren) | Feature | Klein | App hat aktuell **keine** Shortcuts außer Sheet-Standardaktionen (⏎/⎋) — für eine native Mac-App eine auffällige Lücke im Alltagsgebrauch. |
-| 2 | 🔧 In Arbeit | **Kopieren-Affordanzen**: SHA, Branch-/Tag-Name, Commit-Nachricht per Klick/Kontextmenü in Zwischenablage | Feature | Klein | Sehr häufige Aktion in jedem Git-Client, fehlt komplett. |
+| 2 | ✅ Erledigt | **Kopieren-Affordanzen**: SHA, Branch-/Tag-Name, Commit-Nachricht per Klick/Kontextmenü in Zwischenablage | Feature | Klein | Sehr häufige Aktion in jedem Git-Client, fehlt komplett. |
 | 3 | Offen | **"Im Terminal öffnen"** Kontextmenü-Eintrag pro Repository (neben dem schon vorhandenen "Im Finder zeigen") | Feature | Klein (NSWorkspace) | Trivial umzusetzen, spart bei Bedarf den Wechsel zur Shell. |
 | 4 | Offen | **Favoriten/Angepinnte Repositories** — oben in der Übersicht fixiert, unabhängig von Ordnerstruktur | Feature | Klein–Mittel | Bei vielen Repos schneller Zugriff auf die 2–3 täglich genutzten. |
 | 5 | Offen | **`AppSettings` dependency-injectable machen** (statt hartkodiertem `UserDefaults.standard`) | Optimierung | Mittel | Behebt die *Ursache* der JIRA-Settings-Bug-Klasse strukturell, statt nur das Symptom (der `withRestoredDefaults`-Test-Helfer bleibt ein Pflaster). Macht `SettingsView`/Tests robuster gegen zukünftige ähnliche Bugs. |

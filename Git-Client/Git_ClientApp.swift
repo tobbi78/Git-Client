@@ -48,8 +48,21 @@ struct Git_ClientApp: App {
                 applyNSAppearance(newRaw)
                 resolvedScheme = Self.computeScheme(newRaw)
             }
+            .overlay {
+                if appModel.isCommandPaletteOpen {
+                    CommandPaletteView()
+                }
+            }
         }
         .defaultSize(width: 1200, height: 780)
+        .commands {
+            CommandMenu("Navigation") {
+                Button("Befehlspalette") {
+                    appModel.isCommandPaletteOpen.toggle()
+                }
+                .keyboardShortcut("k", modifiers: .command)
+            }
+        }
 
         // Statistik-Fenster — geöffnet per openWindow(id: "repo-statistics", value: bookmark)
         WindowGroup(id: "repo-statistics", for: RepositoryBookmark.self) { $bookmark in

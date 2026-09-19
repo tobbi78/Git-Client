@@ -2869,6 +2869,128 @@ struct RepoStatusTests {
     }
 }
 
+// MARK: - CommandPaletteResult
+
+@Suite("CommandPaletteResult — Suche")
+struct CommandPaletteResultTests {
+
+    private func makeRepo(name: String) -> RepositoryBookmark {
+        RepositoryBookmark(name: name, path: URL(fileURLWithPath: "/tmp/\(name)"))
+    }
+
+    private func makeBranch(name: String, remote: String? = nil) -> Branch {
+        Branch(
+            name: remote.map { "\($0)/\(name)" } ?? name,
+            shortName: name,
+            isCurrent: false,
+            isRemote: remote != nil,
+            remoteName: remote,
+            tipSha: "aaa0000000000000000000000000000000000000",
+            upstreamName: nil, ahead: nil, behind: nil
+        )
+    }
+
+    private func makeTag(name: String) -> GitTag {
+        GitTag(name: name, targetSha: "bbb0000000000000000000000000000000000000")
+    }
+
+    private func makeCommit(subject: String, sha: String = "ccc0000000000000000000000000000000000000") -> Commit {
+        Commit(
+            sha: sha, shortSha: String(sha.prefix(8)), parents: [],
+            author: "A", authorEmail: "a@a.com", date: Date(timeIntervalSince1970: 0),
+            subject: subject, body: "", refNames: []
+        )
+    }
+
+    @Test("Leere Suche zeigt nur Repositories, keine Branches/Tags/Commits")
+    func emptyQueryShowsOnlyRepos() {
+        let results = CommandPaletteResult.search(
+            query: "",
+            repositories: [makeRepo(name: "Foo"), makeRepo(name: "Bar")],
+            branches: [makeBranch(name: "main")],
+            tags: [makeTag(name: "v1.0")],
+            commits: [makeCommit(subject: "Initial")]
+        )
+        #expect(results.count == 2)
+        #expect(results.allSatisfy { if case .repository = $0 { true } else { false } })
+    }
+
+    @Test("Repository-Name wird case-insensitiv per Teilstring gefunden")
+    func repositoryMatchIsCaseInsensitive() {
+        let results = CommandPaletteResult.search(
+            query: "FOO",
+            repositories: [makeRepo(name: "MyFooRepo"), makeRepo(name: "Other")],
+            branches: [], tags: [], commits: []
+        )
+        #expect(results.count == 1)
+        #expect(results.first?.title == "MyFooRepo")
+    }
+
+    @Test("Ohne geöffnetes Repository (leere Branches/Tags/Commits) liefert eine Suche nur Repo-Treffer")
+    func noOpenRepoYieldsOnlyRepoMatches() {
+        let results = CommandPaletteResult.search(
+            query: "main",
+            repositories: [makeRepo(name: "main-project")],
+            branches: [], tags: [], commits: []
+        )
+        #expect(results.count == 1)
+        if case .repository(let r) = results.first { #expect(r.name == "main-project") } else { Issue.record("Erwartete .repository") }
+    }
+
+    @Test("Branch-, Tag- und Commit-Treffer bei geöffnetem Repository, sobald Suche nicht leer ist")
+    func branchTagCommitMatchesWhenRepoOpen() {
+        let results = CommandPaletteResult.search(
+            query: "rel",
+            repositories: [makeRepo(name: "GitClient")],
+            branches: [makeBranch(name: "release/1.0"), makeBranch(name: "main")],
+            tags: [makeTag(name: "release-tag"), makeTag(name: "v1.0")],
+            commits: [makeCommit(subject: "Release vorbereiten"), makeCommit(subject: "Fix", sha: "ddd0000000000000000000000000000000000000")]
+        )
+        let kinds = results.map { result -> String in
+            switch result {
+            case .repository: "repo"
+            case .branch: "branch"
+            case .tag: "tag"
+            case .commit: "commit"
+            }
+        }
+        #expect(!kinds.contains("repo")) // "GitClient" enthält "rel" nicht
+        #expect(kinds.contains("branch"))
+        #expect(kinds.contains("tag"))
+        #expect(kinds.contains("commit"))
+    }
+
+    @Test("Remote-Branch zeigt Remote-Namen in der Subtitle")
+    func remoteBranchSubtitleShowsRemoteName() {
+        let result = CommandPaletteResult.branch(makeBranch(name: "main", remote: "origin"))
+        #expect(result.subtitle.contains("origin"))
+    }
+
+    @Test("Commit-Suche findet über Kurz-SHA-Präfix")
+    func commitMatchByShortShaPrefix() {
+        let sha = "eeeeeeee00000000000000000000000000000000"
+        let results = CommandPaletteResult.search(
+            query: "eeeeeeee",
+            repositories: [],
+            branches: [], tags: [],
+            commits: [makeCommit(subject: "Etwas völlig anderes", sha: sha)]
+        )
+        #expect(results.count == 1)
+    }
+
+    @Test("limitPerCategory begrenzt die Trefferzahl pro Kategorie")
+    func limitPerCategoryIsRespected() {
+        let manyRepos = (0..<20).map { makeRepo(name: "repo-\($0)") }
+        let results = CommandPaletteResult.search(
+            query: "repo",
+            repositories: manyRepos,
+            branches: [], tags: [], commits: [],
+            limitPerCategory: 3
+        )
+        #expect(results.count == 3)
+    }
+}
+
 // MARK: - GitService — lokale Statusabfragen (Integration)
 
 @Suite("GitService — lokale Statusabfragen")

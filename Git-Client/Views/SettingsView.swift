@@ -51,12 +51,12 @@ struct SettingsView: View {
 
     private var hasChanges: Bool {
         parsedBatch != savedBatchSize
-        || draftBaseURL != AppSettings.jiraBaseURL
-        || draftProjects != AppSettings.jiraProjects
-        || draftAutoRefreshEnabled != AppSettings.autoRefreshEnabled
-        || parsedPollInterval != AppSettings.remotePollInterval
-        || draftShowLineNumbers != AppSettings.showDiffLineNumbers
-        || draftAppearance != AppSettings.appearance
+        || draftBaseURL != AppSettings.shared.jiraBaseURL
+        || draftProjects != AppSettings.shared.jiraProjects
+        || draftAutoRefreshEnabled != AppSettings.shared.autoRefreshEnabled
+        || parsedPollInterval != AppSettings.shared.remotePollInterval
+        || draftShowLineNumbers != AppSettings.shared.showDiffLineNumbers
+        || draftAppearance != AppSettings.shared.appearance
     }
 
     // MARK: - Body
@@ -332,12 +332,12 @@ struct SettingsView: View {
 
     private func syncDraftFromSettings() {
         draftBatchText = "\(savedBatchSize)"
-        draftBaseURL   = AppSettings.jiraBaseURL
-        draftProjects  = AppSettings.jiraProjects
-        draftAutoRefreshEnabled = AppSettings.autoRefreshEnabled
-        draftPollIntervalText   = "\(AppSettings.remotePollInterval)"
-        draftShowLineNumbers    = AppSettings.showDiffLineNumbers
-        draftAppearance         = AppSettings.appearance
+        draftBaseURL   = AppSettings.shared.jiraBaseURL
+        draftProjects  = AppSettings.shared.jiraProjects
+        draftAutoRefreshEnabled = AppSettings.shared.autoRefreshEnabled
+        draftPollIntervalText   = "\(AppSettings.shared.remotePollInterval)"
+        draftShowLineNumbers    = AppSettings.shared.showDiffLineNumbers
+        draftAppearance         = AppSettings.shared.appearance
     }
 
     private func saveAndClose() {
@@ -356,13 +356,13 @@ struct SettingsView: View {
         savedBatchSize = clamped
 
         // JIRA
-        AppSettings.setJiraBaseURL(draftBaseURL.trimmingCharacters(in: .whitespacesAndNewlines))
-        AppSettings.setJiraProjects(draftProjects.filter {
+        AppSettings.shared.setJiraBaseURL(draftBaseURL.trimmingCharacters(in: .whitespacesAndNewlines))
+        AppSettings.shared.setJiraProjects(draftProjects.filter {
             !$0.key.trimmingCharacters(in: .whitespaces).isEmpty
         })
 
         // Auto-Refresh
-        AppSettings.setAutoRefreshEnabled(draftAutoRefreshEnabled)
+        AppSettings.shared.setAutoRefreshEnabled(draftAutoRefreshEnabled)
         if let rawInterval = parsedPollInterval {
             let clampedInterval = rawInterval == 0 ? 0 : max(rawInterval, AppSettings.minimumRemotePollInterval)
             if clampedInterval != rawInterval {
@@ -373,12 +373,12 @@ struct SettingsView: View {
                     showPollIntervalWarning = false
                 }
             }
-            AppSettings.setRemotePollInterval(clampedInterval)
+            AppSettings.shared.setRemotePollInterval(clampedInterval)
         }
 
         // Anzeige
-        AppSettings.setShowDiffLineNumbers(draftShowLineNumbers)
-        AppSettings.setAppearance(draftAppearance)
+        AppSettings.shared.setShowDiffLineNumbers(draftShowLineNumbers)
+        AppSettings.shared.setAppearance(draftAppearance)
 
         syncDraftFromSettings()
         dismiss()

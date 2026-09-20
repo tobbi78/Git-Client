@@ -10,6 +10,7 @@ import Observation
 @MainActor
 final class AppModel {
     private let store: BookmarkStore
+    private let settings: AppSettings
 
     var bookmarkNodes: [BookmarkNode] = []
     var openedRepository: RepositoryBookmark? = nil
@@ -37,15 +38,17 @@ final class AppModel {
     private let watcher = GitFolderWatcher()
     private var remotePollTask: Task<Void, Never>?
 
-    init() {
+    init(settings: AppSettings = .shared) {
         self.store = BookmarkStore()
+        self.settings = settings
         bookmarkNodes = store.load()
         startMonitoring()
     }
 
     /// Nur für Tests: erlaubt das Injizieren eines benutzerdefinierten BookmarkStore.
-    init(store: BookmarkStore) {
+    init(store: BookmarkStore, settings: AppSettings = .shared) {
         self.store = store
+        self.settings = settings
         bookmarkNodes = store.load()
         // Im Test-Init kein Monitoring starten (kein reales .git vorhanden).
     }
@@ -135,7 +138,7 @@ final class AppModel {
     func openRepository(_ bookmark: RepositoryBookmark) {
         guard FileManager.default.fileExists(atPath: bookmark.path.path) else { return }
         openedRepository = bookmark
-        let vm = RepositoryViewModel(repository: bookmark)
+        let vm = RepositoryViewModel(repository: bookmark, settings: settings)
         repositoryViewModel = vm
         // Beim Öffnen als „gesehen" markieren, damit kein veralteter Badge erscheint.
         Task {
@@ -171,7 +174,7 @@ final class AppModel {
     }
 
     private func startMonitoring() {
-        guard AppSettings.autoRefreshEnabled else { return }
+        guard settings.autoRefreshEnabled else { return }
 
         let repos = bookmarkNodes.allRepositories().filter {
             FileManager.default.fileExists(atPath: $0.path.appendingPathComponent(".git").path)
@@ -221,7 +224,7 @@ final class AppModel {
         }
 
         // Remote-Poll-Task starten
-        let interval = AppSettings.remotePollInterval
+        let interval = settings.remotePollInterval
         guard interval > 0 else { return }
         let reposForPoll = repos
         remotePollTask = Task { [weak self] in

@@ -6,10 +6,22 @@
 //  Wird von RepositoryViewModel (Batch-Größe lesen) und SettingsView
 //  (Batch-Größe schreiben) gemeinsam genutzt.
 //
+//  Injizierbar über `defaults:` statt hartkodiertem UserDefaults.standard, damit
+//  Tests eine eigene, isolierte Suite verwenden können und nie die echten
+//  App-Einstellungen berühren (siehe withIsolatedSettings in den Tests).
+//
 
 import Foundation
 
-enum AppSettings {
+nonisolated struct AppSettings {
+    let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    /// Produktions-Instanz auf der Standard-Domain.
+    static let shared = AppSettings()
 
     // MARK: - Commit-Batch
 
@@ -23,11 +35,11 @@ enum AppSettings {
     static let minimumCommitBatchSize = 100
 
     /// Aktuell konfigurierte Batch-Größe (mindestens `minimumCommitBatchSize`).
-    static var commitBatchSize: Int {
-        let stored = UserDefaults.standard.integer(forKey: commitBatchSizeKey)
+    var commitBatchSize: Int {
+        let stored = defaults.integer(forKey: Self.commitBatchSizeKey)
         // integer(forKey:) gibt 0 zurück, wenn der Key nie gesetzt wurde.
-        let value = stored > 0 ? stored : defaultCommitBatchSize
-        return max(value, minimumCommitBatchSize)
+        let value = stored > 0 ? stored : Self.defaultCommitBatchSize
+        return max(value, Self.minimumCommitBatchSize)
     }
 
     // MARK: - JIRA
@@ -39,23 +51,23 @@ enum AppSettings {
     static let jiraProjectsKey = "jiraProjects"
 
     /// Aktuell konfigurierte JIRA-Basis-URL (leer wenn nicht gesetzt).
-    static var jiraBaseURL: String {
-        UserDefaults.standard.string(forKey: jiraBaseURLKey) ?? ""
+    var jiraBaseURL: String {
+        defaults.string(forKey: Self.jiraBaseURLKey) ?? ""
     }
 
-    static func setJiraBaseURL(_ url: String) {
-        UserDefaults.standard.set(url, forKey: jiraBaseURLKey)
+    func setJiraBaseURL(_ url: String) {
+        defaults.set(url, forKey: Self.jiraBaseURLKey)
     }
 
     /// Aktuell konfigurierte JIRA-Projekte.
-    static var jiraProjects: [JiraProject] {
-        guard let data = UserDefaults.standard.data(forKey: jiraProjectsKey) else { return [] }
+    var jiraProjects: [JiraProject] {
+        guard let data = defaults.data(forKey: Self.jiraProjectsKey) else { return [] }
         return (try? JSONDecoder().decode([JiraProject].self, from: data)) ?? []
     }
 
-    static func setJiraProjects(_ projects: [JiraProject]) {
+    func setJiraProjects(_ projects: [JiraProject]) {
         if let data = try? JSONEncoder().encode(projects) {
-            UserDefaults.standard.set(data, forKey: jiraProjectsKey)
+            defaults.set(data, forKey: Self.jiraProjectsKey)
         }
     }
 
@@ -77,36 +89,36 @@ enum AppSettings {
     static let minimumRemotePollInterval = 60
 
     /// Gibt zurück, ob der Auto-Refresh aktiv sein soll.
-    static var autoRefreshEnabled: Bool {
+    var autoRefreshEnabled: Bool {
         // bool(forKey:) gibt false zurück, wenn der Key nie gesetzt wurde —
         // deshalb expliziter Check, ob der Key existiert.
-        if UserDefaults.standard.object(forKey: autoRefreshEnabledKey) == nil {
-            return defaultAutoRefreshEnabled
+        if defaults.object(forKey: Self.autoRefreshEnabledKey) == nil {
+            return Self.defaultAutoRefreshEnabled
         }
-        return UserDefaults.standard.bool(forKey: autoRefreshEnabledKey)
+        return defaults.bool(forKey: Self.autoRefreshEnabledKey)
     }
 
-    static func setAutoRefreshEnabled(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: autoRefreshEnabledKey)
+    func setAutoRefreshEnabled(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Self.autoRefreshEnabledKey)
     }
 
     /// Poll-Intervall in Sekunden. `0` deaktiviert das Remote-Polling (lokales
     /// FSEvent-Watching bleibt aktiv). Mindestens `minimumRemotePollInterval`.
-    static var remotePollInterval: Int {
-        let stored = UserDefaults.standard.integer(forKey: remotePollIntervalKey)
+    var remotePollInterval: Int {
+        let stored = defaults.integer(forKey: Self.remotePollIntervalKey)
         if stored == 0 {
             // Wert nie gesetzt → Default
-            if UserDefaults.standard.object(forKey: remotePollIntervalKey) == nil {
-                return defaultRemotePollInterval
+            if defaults.object(forKey: Self.remotePollIntervalKey) == nil {
+                return Self.defaultRemotePollInterval
             }
             // Explizit auf 0 gesetzt → Remote-Poll aus
             return 0
         }
-        return max(stored, minimumRemotePollInterval)
+        return max(stored, Self.minimumRemotePollInterval)
     }
 
-    static func setRemotePollInterval(_ seconds: Int) {
-        UserDefaults.standard.set(seconds, forKey: remotePollIntervalKey)
+    func setRemotePollInterval(_ seconds: Int) {
+        defaults.set(seconds, forKey: Self.remotePollIntervalKey)
     }
 
     // MARK: - Anzeige
@@ -118,15 +130,15 @@ enum AppSettings {
     static let defaultShowDiffLineNumbers = true
 
     /// Gibt zurück, ob Zeilennummern im Diff-Patch angezeigt werden sollen.
-    static var showDiffLineNumbers: Bool {
-        if UserDefaults.standard.object(forKey: showDiffLineNumbersKey) == nil {
-            return defaultShowDiffLineNumbers
+    var showDiffLineNumbers: Bool {
+        if defaults.object(forKey: Self.showDiffLineNumbersKey) == nil {
+            return Self.defaultShowDiffLineNumbers
         }
-        return UserDefaults.standard.bool(forKey: showDiffLineNumbersKey)
+        return defaults.bool(forKey: Self.showDiffLineNumbersKey)
     }
 
-    static func setShowDiffLineNumbers(_ enabled: Bool) {
-        UserDefaults.standard.set(enabled, forKey: showDiffLineNumbersKey)
+    func setShowDiffLineNumbers(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Self.showDiffLineNumbersKey)
     }
 
     // MARK: - Erscheinungsbild
@@ -138,13 +150,13 @@ enum AppSettings {
     static let defaultAppearance: AppAppearance = .system
 
     /// Aktuell gewähltes Erscheinungsbild.
-    static var appearance: AppAppearance {
-        guard let raw = UserDefaults.standard.string(forKey: appearanceKey),
-              let value = AppAppearance(rawValue: raw) else { return defaultAppearance }
+    var appearance: AppAppearance {
+        guard let raw = defaults.string(forKey: Self.appearanceKey),
+              let value = AppAppearance(rawValue: raw) else { return Self.defaultAppearance }
         return value
     }
 
-    static func setAppearance(_ appearance: AppAppearance) {
-        UserDefaults.standard.set(appearance.rawValue, forKey: appearanceKey)
+    func setAppearance(_ appearance: AppAppearance) {
+        defaults.set(appearance.rawValue, forKey: Self.appearanceKey)
     }
 }

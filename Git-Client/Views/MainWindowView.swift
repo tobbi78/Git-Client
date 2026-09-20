@@ -80,6 +80,12 @@ struct MainWindowView: View {
                 .help("Repository-Statistiken in einem neuen Fenster anzeigen")
             }
             ToolbarItem(placement: .primaryAction) {
+                Button("Im Terminal öffnen", systemImage: "terminal") {
+                    TerminalService.open(directory: repository.path)
+                }
+                .help("Repository-Ordner in der Terminal-App öffnen")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button("Neu laden", systemImage: "arrow.clockwise") {
                     Task { await vm?.load() }
                 }

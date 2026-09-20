@@ -349,6 +349,9 @@ private struct BookmarkNodeView: View {
             Button("Im Finder zeigen") {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: repo.path.path)
             }
+            Button("Im Terminal öffnen") {
+                TerminalService.open(directory: repo.path)
+            }
         } else {
             Button("Pfad aktualisieren…") {
                 appModel.promptUpdateRepositoryPath(id: repo.id)

@@ -2991,6 +2991,39 @@ struct CommandPaletteResultTests {
     }
 }
 
+// MARK: - TerminalService — Auswahl der Terminal-App
+
+@Suite("TerminalService — Auswahl der Terminal-App")
+struct TerminalServiceTests {
+
+    @Test("Erste auflösbare ID gewinnt vor dem Fallback")
+    func firstResolvableIdentifierWins() {
+        let url = TerminalService.firstAvailable(in: ["a", "b", "c"]) { identifier in
+            identifier == "b" ? URL(fileURLWithPath: "/Applications/B.app") : nil
+        }
+        #expect(url == URL(fileURLWithPath: "/Applications/B.app"))
+    }
+
+    @Test("Nicht auflösbare Einträge werden übersprungen")
+    func unresolvableIdentifiersAreSkipped() {
+        let url = TerminalService.firstAvailable(in: ["a", "b", "c"]) { identifier in
+            identifier == "c" ? URL(fileURLWithPath: "/Applications/C.app") : nil
+        }
+        #expect(url == URL(fileURLWithPath: "/Applications/C.app"))
+    }
+
+    @Test("Löst keiner der Einträge auf, ist das Ergebnis nil")
+    func noResolvableIdentifierReturnsNil() {
+        let url = TerminalService.firstAvailable(in: ["a", "b"]) { _ in nil }
+        #expect(url == nil)
+    }
+
+    @Test("Terminal.app steht als garantierter Fallback am Ende der Prioritätsliste")
+    func terminalAppIsLastFallback() {
+        #expect(TerminalService.preferredBundleIdentifiers.last == "com.apple.Terminal")
+    }
+}
+
 // MARK: - GitService — lokale Statusabfragen (Integration)
 
 @Suite("GitService — lokale Statusabfragen")

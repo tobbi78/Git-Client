@@ -44,24 +44,18 @@ private func makeSeparatedRecord(
     return "\(sha)\(fs)\(shortSha)\(fs)\(parents)\(fs)\(author)\(fs)\(email)\(fs)\(date)\(fs)\(refs)\(fs)\(subject)\(fs)\(body)\(rs)"
 }
 
-/// Führt `body` aus und stellt danach den ursprünglichen `UserDefaults.standard`-Wert
-/// für `key` wieder her (war er nicht gesetzt, wird der Key wieder entfernt).
+/// Führt `body` mit einer frischen, isolierten `UserDefaults`-Suite aus und entfernt
+/// sie danach vollständig wieder.
 ///
-/// Notwendig, weil das Testtarget per `TEST_HOST` in Git-Client.app läuft und damit
-/// dieselbe `UserDefaults.standard`-Domain (Bundle-ID) wie die echte App teilt — ein
-/// unbedingtes `removeObject`/`set` in einem Test hätte sonst reale, vom Nutzer in den
-/// Einstellungen gespeicherte Werte (z.B. JIRA-Konfiguration) beim nächsten Testlauf
-/// überschrieben oder gelöscht.
-private func withRestoredDefaults<T>(_ key: String, _ body: () throws -> T) rethrows -> T {
-    let original = UserDefaults.standard.object(forKey: key)
-    defer {
-        if let original {
-            UserDefaults.standard.set(original, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
-    }
-    return try body()
+/// Das Testtarget läuft per `TEST_HOST` in Git-Client.app und teilt sich damit
+/// dieselbe `UserDefaults.standard`-Domain (Bundle-ID) wie die echte App. Über eine
+/// eigene Suite berührt `AppSettings` hier nie die realen, vom Nutzer gespeicherten
+/// Werte (z.B. JIRA-Konfiguration) — strukturell, nicht nur per Wiederherstellung.
+private func withIsolatedSettings<T>(_ body: (AppSettings) throws -> T) rethrows -> T {
+    let suiteName = "Git-Client.tests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    return try body(AppSettings(defaults: defaults))
 }
 
 // MARK: - GitLogParser
@@ -1110,40 +1104,38 @@ struct GitServiceParserTests {
 
 // MARK: - AppSettings
 
-@Suite("AppSettings", .serialized)
+@Suite("AppSettings")
 struct AppSettingsTests {
 
     @Test("Standardwert ist 2000")
     func defaultBatchSize() {
-        withRestoredDefaults(AppSettings.commitBatchSizeKey) {
-            // Wenn der Key nie gesetzt wurde (integer = 0), muss der Default greifen.
-            UserDefaults.standard.removeObject(forKey: AppSettings.commitBatchSizeKey)
-            #expect(AppSettings.commitBatchSize == AppSettings.defaultCommitBatchSize)
+        withIsolatedSettings { settings in
+            #expect(settings.commitBatchSize == AppSettings.defaultCommitBatchSize)
         }
     }
 
     @Test("Gespeicherter Wert wird korrekt gelesen")
     func storedValueIsRead() {
-        withRestoredDefaults(AppSettings.commitBatchSizeKey) {
-            UserDefaults.standard.set(500, forKey: AppSettings.commitBatchSizeKey)
-            #expect(AppSettings.commitBatchSize == 500)
+        withIsolatedSettings { settings in
+            settings.defaults.set(500, forKey: AppSettings.commitBatchSizeKey)
+            #expect(settings.commitBatchSize == 500)
         }
     }
 
     @Test("Minimumwert wird durchgesetzt")
     func minimumEnforced() {
-        withRestoredDefaults(AppSettings.commitBatchSizeKey) {
+        withIsolatedSettings { settings in
             // commitBatchSize gibt mindestens minimumCommitBatchSize zurück
-            UserDefaults.standard.set(1, forKey: AppSettings.commitBatchSizeKey)
-            #expect(AppSettings.commitBatchSize == AppSettings.minimumCommitBatchSize)
+            settings.defaults.set(1, forKey: AppSettings.commitBatchSizeKey)
+            #expect(settings.commitBatchSize == AppSettings.minimumCommitBatchSize)
         }
     }
 
     @Test("Wert 0 (nie gesetzt) ergibt Default")
     func zeroYieldsDefault() {
-        withRestoredDefaults(AppSettings.commitBatchSizeKey) {
-            UserDefaults.standard.set(0, forKey: AppSettings.commitBatchSizeKey)
-            #expect(AppSettings.commitBatchSize == AppSettings.defaultCommitBatchSize)
+        withIsolatedSettings { settings in
+            settings.defaults.set(0, forKey: AppSettings.commitBatchSizeKey)
+            #expect(settings.commitBatchSize == AppSettings.defaultCommitBatchSize)
         }
     }
 }
@@ -2428,9 +2420,9 @@ struct AppAppearanceTests {
 
     @Test("AppSettings Round-Trip: dark")
     func settingsRoundTripDark() {
-        withRestoredDefaults(AppSettings.appearanceKey) {
-            AppSettings.setAppearance(.dark)
-            #expect(AppSettings.appearance == .dark)
+        withIsolatedSettings { settings in
+            settings.setAppearance(.dark)
+            #expect(settings.appearance == .dark)
         }
     }
 
@@ -2463,24 +2455,23 @@ struct AppAppearanceTests {
 
 // MARK: - AppSettings Erweitert (JIRA, Auto-Refresh, Poll-Intervall, Anzeige)
 
-@Suite("AppSettings — Erweitert", .serialized)
+@Suite("AppSettings — Erweitert")
 struct AppSettingsExtendedTests {
 
     // MARK: JIRA Base URL
 
     @Test("jiraBaseURL — leer wenn nie gesetzt")
     func jiraBaseURLDefault() {
-        withRestoredDefaults(AppSettings.jiraBaseURLKey) {
-            UserDefaults.standard.removeObject(forKey: AppSettings.jiraBaseURLKey)
-            #expect(AppSettings.jiraBaseURL == "")
+        withIsolatedSettings { settings in
+            #expect(settings.jiraBaseURL == "")
         }
     }
 
     @Test("jiraBaseURL — Round-Trip")
     func jiraBaseURLRoundTrip() {
-        withRestoredDefaults(AppSettings.jiraBaseURLKey) {
-            AppSettings.setJiraBaseURL("https://test.atlassian.net")
-            #expect(AppSettings.jiraBaseURL == "https://test.atlassian.net")
+        withIsolatedSettings { settings in
+            settings.setJiraBaseURL("https://test.atlassian.net")
+            #expect(settings.jiraBaseURL == "https://test.atlassian.net")
         }
     }
 
@@ -2488,20 +2479,19 @@ struct AppSettingsExtendedTests {
 
     @Test("jiraProjects — leer wenn nie gesetzt")
     func jiraProjectsDefault() {
-        withRestoredDefaults(AppSettings.jiraProjectsKey) {
-            UserDefaults.standard.removeObject(forKey: AppSettings.jiraProjectsKey)
-            #expect(AppSettings.jiraProjects.isEmpty)
+        withIsolatedSettings { settings in
+            #expect(settings.jiraProjects.isEmpty)
         }
     }
 
     @Test("jiraProjects — Encode/Decode Round-Trip")
     func jiraProjectsRoundTrip() {
-        withRestoredDefaults(AppSettings.jiraProjectsKey) {
+        withIsolatedSettings { settings in
             var p = JiraProject()
             p.key = "PROJ"
             p.description = "Test"
-            AppSettings.setJiraProjects([p])
-            let loaded = AppSettings.jiraProjects
+            settings.setJiraProjects([p])
+            let loaded = settings.jiraProjects
             #expect(loaded.count == 1)
             #expect(loaded.first?.key == "PROJ")
         }
@@ -2511,25 +2501,24 @@ struct AppSettingsExtendedTests {
 
     @Test("autoRefreshEnabled — Default ist true wenn Key fehlt")
     func autoRefreshDefault() {
-        withRestoredDefaults(AppSettings.autoRefreshEnabledKey) {
-            UserDefaults.standard.removeObject(forKey: AppSettings.autoRefreshEnabledKey)
-            #expect(AppSettings.autoRefreshEnabled == AppSettings.defaultAutoRefreshEnabled)
+        withIsolatedSettings { settings in
+            #expect(settings.autoRefreshEnabled == AppSettings.defaultAutoRefreshEnabled)
         }
     }
 
     @Test("autoRefreshEnabled — Round-Trip false")
     func autoRefreshFalse() {
-        withRestoredDefaults(AppSettings.autoRefreshEnabledKey) {
-            AppSettings.setAutoRefreshEnabled(false)
-            #expect(AppSettings.autoRefreshEnabled == false)
+        withIsolatedSettings { settings in
+            settings.setAutoRefreshEnabled(false)
+            #expect(settings.autoRefreshEnabled == false)
         }
     }
 
     @Test("autoRefreshEnabled — Round-Trip true")
     func autoRefreshTrue() {
-        withRestoredDefaults(AppSettings.autoRefreshEnabledKey) {
-            AppSettings.setAutoRefreshEnabled(true)
-            #expect(AppSettings.autoRefreshEnabled == true)
+        withIsolatedSettings { settings in
+            settings.setAutoRefreshEnabled(true)
+            #expect(settings.autoRefreshEnabled == true)
         }
     }
 
@@ -2537,33 +2526,32 @@ struct AppSettingsExtendedTests {
 
     @Test("remotePollInterval — Default wenn Key fehlt")
     func pollIntervalDefault() {
-        withRestoredDefaults(AppSettings.remotePollIntervalKey) {
-            UserDefaults.standard.removeObject(forKey: AppSettings.remotePollIntervalKey)
-            #expect(AppSettings.remotePollInterval == AppSettings.defaultRemotePollInterval)
+        withIsolatedSettings { settings in
+            #expect(settings.remotePollInterval == AppSettings.defaultRemotePollInterval)
         }
     }
 
     @Test("remotePollInterval — 0 explizit bedeutet deaktiviert")
     func pollIntervalExplicitZero() {
-        withRestoredDefaults(AppSettings.remotePollIntervalKey) {
-            AppSettings.setRemotePollInterval(0)
-            #expect(AppSettings.remotePollInterval == 0)
+        withIsolatedSettings { settings in
+            settings.setRemotePollInterval(0)
+            #expect(settings.remotePollInterval == 0)
         }
     }
 
     @Test("remotePollInterval — gültiger Wert über Minimum")
     func pollIntervalValid() {
-        withRestoredDefaults(AppSettings.remotePollIntervalKey) {
-            AppSettings.setRemotePollInterval(120)
-            #expect(AppSettings.remotePollInterval == 120)
+        withIsolatedSettings { settings in
+            settings.setRemotePollInterval(120)
+            #expect(settings.remotePollInterval == 120)
         }
     }
 
     @Test("remotePollInterval — unter Minimum wird auf Minimum geklemmt")
     func pollIntervalClamped() {
-        withRestoredDefaults(AppSettings.remotePollIntervalKey) {
-            AppSettings.setRemotePollInterval(10)
-            #expect(AppSettings.remotePollInterval == AppSettings.minimumRemotePollInterval)
+        withIsolatedSettings { settings in
+            settings.setRemotePollInterval(10)
+            #expect(settings.remotePollInterval == AppSettings.minimumRemotePollInterval)
         }
     }
 
@@ -2571,25 +2559,24 @@ struct AppSettingsExtendedTests {
 
     @Test("showDiffLineNumbers — Default ist true wenn Key fehlt")
     func lineNumbersDefault() {
-        withRestoredDefaults(AppSettings.showDiffLineNumbersKey) {
-            UserDefaults.standard.removeObject(forKey: AppSettings.showDiffLineNumbersKey)
-            #expect(AppSettings.showDiffLineNumbers == true)
+        withIsolatedSettings { settings in
+            #expect(settings.showDiffLineNumbers == true)
         }
     }
 
     @Test("showDiffLineNumbers — Round-Trip false")
     func lineNumbersFalse() {
-        withRestoredDefaults(AppSettings.showDiffLineNumbersKey) {
-            AppSettings.setShowDiffLineNumbers(false)
-            #expect(AppSettings.showDiffLineNumbers == false)
+        withIsolatedSettings { settings in
+            settings.setShowDiffLineNumbers(false)
+            #expect(settings.showDiffLineNumbers == false)
         }
     }
 
     @Test("showDiffLineNumbers — Round-Trip true")
     func lineNumbersTrue() {
-        withRestoredDefaults(AppSettings.showDiffLineNumbersKey) {
-            AppSettings.setShowDiffLineNumbers(true)
-            #expect(AppSettings.showDiffLineNumbers == true)
+        withIsolatedSettings { settings in
+            settings.setShowDiffLineNumbers(true)
+            #expect(settings.showDiffLineNumbers == true)
         }
     }
 
@@ -2597,17 +2584,17 @@ struct AppSettingsExtendedTests {
 
     @Test("appearance — ungültiger rawValue ergibt Default")
     func appearanceInvalidRaw() {
-        withRestoredDefaults(AppSettings.appearanceKey) {
-            UserDefaults.standard.set("invalid_scheme", forKey: AppSettings.appearanceKey)
-            #expect(AppSettings.appearance == AppSettings.defaultAppearance)
+        withIsolatedSettings { settings in
+            settings.defaults.set("invalid_scheme", forKey: AppSettings.appearanceKey)
+            #expect(settings.appearance == AppSettings.defaultAppearance)
         }
     }
 
     @Test("appearance — Round-Trip light")
     func appearanceRoundTripLight() {
-        withRestoredDefaults(AppSettings.appearanceKey) {
-            AppSettings.setAppearance(.light)
-            #expect(AppSettings.appearance == .light)
+        withIsolatedSettings { settings in
+            settings.setAppearance(.light)
+            #expect(settings.appearance == .light)
         }
     }
 }
@@ -3497,10 +3484,10 @@ extension GitServiceAheadBehindTests {
 @MainActor
 struct AppModelMonitoringTests {
 
-    func makeModel() -> AppModel {
+    func makeModel(settings: AppSettings = .shared) -> AppModel {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("appmodel-mon-\(UUID().uuidString).json")
-        return AppModel(store: BookmarkStore(fileURL: url))
+        return AppModel(store: BookmarkStore(fileURL: url), settings: settings)
     }
 
     @Test("startMonitoring erstellt Services und Task für Repos mit .git-Verzeichnis")
@@ -3517,18 +3504,15 @@ struct AppModelMonitoringTests {
         try sh("git", "-C", repoURL.path, "commit", "-m", "init")
         defer { try? FileManager.default.removeItem(at: repoURL) }
 
-        // Auto-Refresh explizit aktivieren, damit startMonitoring über den ersten Guard kommt.
-        let originalAutoRefresh = UserDefaults.standard.object(forKey: AppSettings.autoRefreshEnabledKey)
-        defer {
-            if let originalAutoRefresh {
-                UserDefaults.standard.set(originalAutoRefresh, forKey: AppSettings.autoRefreshEnabledKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: AppSettings.autoRefreshEnabledKey)
-            }
-        }
-        AppSettings.setAutoRefreshEnabled(true)
+        // Isolierte Settings-Suite statt der echten Defaults, in der Auto-Refresh
+        // explizit aktiviert wird, damit startMonitoring über den ersten Guard kommt.
+        let suiteName = "Git-Client.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+        settings.setAutoRefreshEnabled(true)
 
-        let model = makeModel()
+        let model = makeModel(settings: settings)
         // addRepository → persist() → restartMonitoring() → startMonitoring()
         // Mit vorhandenem .git-Verzeichnis wird die Ausführung über guard !repos.isEmpty fortgesetzt.
         model.addRepository(name: "TestRepo", path: repoURL)

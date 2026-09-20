@@ -32,7 +32,7 @@ struct DiffView: View {
     private var jiraTickets: [JiraTicketMatch] {
         JiraLinker.tickets(
             in: commit.subject + "\n" + commit.body,
-            projects: AppSettings.jiraProjects,
+            projects: AppSettings.shared.jiraProjects,
             baseURL: jiraBaseURL
         )
     }

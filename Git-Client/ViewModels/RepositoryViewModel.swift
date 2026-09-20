@@ -14,6 +14,7 @@ import Observation
 final class RepositoryViewModel {
     let repository: RepositoryBookmark
     private let service: GitService
+    private let settings: AppSettings
 
     var commits: [Commit] = []
     var graphRows: [GraphRow] = []
@@ -27,7 +28,7 @@ final class RepositoryViewModel {
     /// Anzahl der per git-log-Paginierung geladenen Commits (Basis für --skip).
     /// Nicht identisch mit commits.count, da loadMissingBranchTips weitere Commits injiziert.
     private var pagedCount = 0
-    private var pageSize: Int { AppSettings.commitBatchSize }
+    private var pageSize: Int { settings.commitBatchSize }
 
     // Remote-Sync-Zustand
     var behindCount = 0          // Commits auf dem Server, die lokal fehlen
@@ -87,9 +88,10 @@ final class RepositoryViewModel {
     // Dezente Rückmeldung, wenn der Tip-Commit nicht in der geladenen Liste ist.
     var branchJumpMessage: String? = nil
 
-    init(repository: RepositoryBookmark) {
+    init(repository: RepositoryBookmark, settings: AppSettings = .shared) {
         self.repository = repository
         self.service = GitService(repositoryPath: repository.path)
+        self.settings = settings
     }
 
     func load() async {
@@ -256,7 +258,7 @@ final class RepositoryViewModel {
         isSearching = true
         defer { isSearching = false }
         do {
-            let pageSize = AppSettings.commitBatchSize
+            let pageSize = settings.commitBatchSize
             let page = try await service.searchCommits(
                 criteria: searchCriteria,
                 limit: pageSize,

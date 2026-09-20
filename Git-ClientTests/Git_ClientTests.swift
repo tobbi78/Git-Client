@@ -1319,6 +1319,102 @@ struct RepositoryViewModelIntegrationTests {
     }
 }
 
+// MARK: - RepositoryViewModel — Branch-Checkout (Integration)
+
+@Suite("RepositoryViewModel — Branch-Checkout")
+@MainActor
+struct RepositoryViewModelCheckoutTests {
+
+    let repoURL: URL
+    let bookmark: RepositoryBookmark
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vm-checkout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "main-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+        try sh("git", "-C", repoURL.path, "checkout", "-b", "feature")
+        try "feature-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "commit", "-am", "feature change")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+        bookmark = RepositoryBookmark(name: "Test", path: repoURL)
+    }
+
+    @Test("requestCheckout wechselt direkt bei sauberem Arbeitsverzeichnis")
+    func requestCheckoutSwitchesDirectlyWhenClean() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { $0.name == "feature" })
+
+        await vm.requestCheckout(feature)
+
+        #expect(vm.pendingCheckoutBranch == nil)
+        #expect(vm.checkoutErrorMessage == nil)
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.currentBranch() == "feature")
+    }
+
+    @Test("requestCheckout löst bei kollidierenden Änderungen den Warndialog aus")
+    func requestCheckoutSetsPendingBranchWhenDirty() async throws {
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { $0.name == "feature" })
+
+        await vm.requestCheckout(feature)
+
+        #expect(vm.pendingCheckoutBranch?.name == "feature")
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.currentBranch() == "main")
+    }
+
+    @Test("confirmCheckoutDiscardingChanges verwirft Änderungen und wechselt")
+    func confirmCheckoutDiscardsAndSwitches() async throws {
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { $0.name == "feature" })
+        await vm.requestCheckout(feature)
+        #expect(vm.pendingCheckoutBranch != nil)
+
+        await vm.confirmCheckoutDiscardingChanges()
+
+        #expect(vm.pendingCheckoutBranch == nil)
+        #expect(vm.checkoutErrorMessage == nil)
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.currentBranch() == "feature")
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "feature-content")
+    }
+
+    @Test("cancelPendingCheckout lässt den aktuellen Branch unverändert")
+    func cancelPendingCheckoutLeavesBranchUnchanged() async throws {
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { $0.name == "feature" })
+        await vm.requestCheckout(feature)
+
+        vm.cancelPendingCheckout()
+
+        #expect(vm.pendingCheckoutBranch == nil)
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.currentBranch() == "main")
+    }
+}
+
 // MARK: - KeychainStore
 
 @Suite("KeychainStore")
@@ -3060,6 +3156,71 @@ struct GitServiceLocalStatusTests {
         if let d = date {
             #expect(abs(d.timeIntervalSinceNow) < 60)
         }
+    }
+}
+
+// MARK: - GitService — Branch-Checkout (Integration)
+
+@Suite("GitService — Branch-Checkout")
+struct GitServiceCheckoutTests {
+
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("checkout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "T")
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "main-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+        try sh("git", "-C", repoURL.path, "branch", "feature")
+    }
+
+    @Test("Checkout ohne lokale Änderungen wechselt den Branch")
+    func checkoutSwitchesBranch() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        try await svc.checkoutBranch(name: "feature")
+        let branch = await svc.currentBranch()
+        #expect(branch == "feature")
+    }
+
+    @Test("Checkout ohne force wirft bei kollidierenden unkommittierten Änderungen")
+    func checkoutWithoutForceThrowsOnConflict() async throws {
+        let f = repoURL.appendingPathComponent("shared.txt")
+        // "shared.txt" auf "feature" mit anderem Inhalt committen, damit der Checkout
+        // ohne --force wegen der lokal überschriebenen Datei kollidiert.
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        try "feature-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "commit", "-am", "feature change")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let svc = GitService(repositoryPath: repoURL)
+        await #expect(throws: (any Error).self) {
+            try await svc.checkoutBranch(name: "feature")
+        }
+    }
+
+    @Test("Checkout mit force verwirft Änderungen und wechselt")
+    func checkoutWithForceDiscardsAndSwitches() async throws {
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        try "feature-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "commit", "-am", "feature change")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let svc = GitService(repositoryPath: repoURL)
+        try await svc.checkoutBranch(name: "feature", force: true)
+
+        let branch = await svc.currentBranch()
+        #expect(branch == "feature")
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "feature-content")
     }
 }
 

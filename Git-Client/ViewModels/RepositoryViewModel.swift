@@ -39,6 +39,11 @@ final class RepositoryViewModel {
     var isPulling = false
     var remoteStatusMessage: String? = nil
 
+    // MARK: - Branch-Checkout
+    var isCheckingOutBranch = false
+    var pendingCheckoutBranch: Branch? = nil   // != nil → Warndialog anzeigen
+    var checkoutErrorMessage: String? = nil
+
     // MARK: - Suche / Filter
 
     var searchCriteria = CommitSearchCriteria()
@@ -208,6 +213,41 @@ final class RepositoryViewModel {
             remoteStatusMessage = error.localizedDescription
         }
         isPulling = false
+    }
+
+    // MARK: - Branch-Checkout
+
+    /// Prüft auf unkommittete Änderungen; wechselt direkt oder löst den Warndialog aus.
+    func requestCheckout(_ branch: Branch) async {
+        guard !branch.isRemote, !branch.isCurrent, !isCheckingOutBranch else { return }
+        if await service.hasUncommittedChanges() {
+            pendingCheckoutBranch = branch
+        } else {
+            await performCheckout(branch, force: false)
+        }
+    }
+
+    /// Vom Warndialog: Änderungen verwerfen und wechseln.
+    func confirmCheckoutDiscardingChanges() async {
+        guard let branch = pendingCheckoutBranch else { return }
+        pendingCheckoutBranch = nil
+        await performCheckout(branch, force: true)
+    }
+
+    func cancelPendingCheckout() {
+        pendingCheckoutBranch = nil
+    }
+
+    private func performCheckout(_ branch: Branch, force: Bool) async {
+        isCheckingOutBranch = true
+        checkoutErrorMessage = nil
+        do {
+            try await service.checkoutBranch(name: branch.name, force: force)
+            await load()
+        } catch {
+            checkoutErrorMessage = error.localizedDescription
+        }
+        isCheckingOutBranch = false
     }
 
     private func refreshAheadBehind() async {

@@ -239,6 +239,16 @@ actor GitService {
         )
     }
 
+    /// Wechselt auf den lokalen Branch `name`. Mit `force: true` werden dabei
+    /// unkommittete Änderungen verworfen (git checkout --force) — wird nur nach
+    /// expliziter Nutzerbestätigung verwendet.
+    func checkoutBranch(name: String, force: Bool = false) async throws {
+        var args = ["checkout"]
+        if force { args.append("--force") }
+        args.append(name)
+        try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+    }
+
     // MARK: - Commit-Suche
 
     /// Durchsucht das gesamte Repository nach Commits, die `criteria` erfüllen.

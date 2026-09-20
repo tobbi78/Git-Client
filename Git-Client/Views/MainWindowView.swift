@@ -120,6 +120,34 @@ struct MainWindowView: View {
             tagsSection
         }
         .listStyle(.sidebar)
+        .confirmationDialog(
+            "Unkommittete Änderungen",
+            isPresented: Binding(
+                get: { vm?.pendingCheckoutBranch != nil },
+                set: { if !$0 { vm?.cancelPendingCheckout() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Änderungen verwerfen und wechseln", role: .destructive) {
+                Task { await vm?.confirmCheckoutDiscardingChanges() }
+            }
+            Button("Abbrechen", role: .cancel) {
+                vm?.cancelPendingCheckout()
+            }
+        } message: {
+            Text("Es gibt unkommittete Änderungen. Beim Wechsel zu \(vm?.pendingCheckoutBranch?.shortName ?? "") werden sie verworfen.")
+        }
+        .alert(
+            "Branch-Wechsel fehlgeschlagen",
+            isPresented: Binding(
+                get: { vm?.checkoutErrorMessage != nil },
+                set: { if !$0 { vm?.checkoutErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(vm?.checkoutErrorMessage ?? "")
+        }
     }
 
     @ViewBuilder
@@ -169,13 +197,21 @@ struct MainWindowView: View {
     private func branchNodeRow(_ node: BranchTreeNode) -> some View {
         switch node {
         case .leaf(let leaf):
-            BranchRowView(branch: leaf.branch, displayName: leaf.displayName)
+            BranchRowView(
+                branch: leaf.branch,
+                displayName: leaf.displayName,
+                onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } }
+            )
                 .contentShape(Rectangle())
                 .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
         case .folder(let folderName, let children):
             DisclosureGroup {
                 ForEach(children) { leaf in
-                    BranchRowView(branch: leaf.branch, displayName: leaf.displayName)
+                    BranchRowView(
+                        branch: leaf.branch,
+                        displayName: leaf.displayName,
+                        onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } }
+                    )
                         .contentShape(Rectangle())
                         .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
                 }
@@ -707,6 +743,7 @@ struct MainWindowView: View {
 private struct BranchRowView: View {
     let branch: Branch
     let displayName: String
+    var onCheckout: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -746,6 +783,13 @@ private struct BranchRowView: View {
                 ClipboardService.copy(branch.name)
             } label: {
                 Label("Branch-Namen kopieren", systemImage: "doc.on.doc")
+            }
+            if !branch.isRemote && !branch.isCurrent {
+                Button {
+                    onCheckout?()
+                } label: {
+                    Label("Zu Branch wechseln", systemImage: "arrow.triangle.branch")
+                }
             }
         }
     }

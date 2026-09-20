@@ -12,6 +12,8 @@ gut ist" und einer empfohlenen Reihenfolge, falls umgesetzt wird.
 
 ## ⚠️ Aktiver Sicherheitsvorfall (sofortiges Handeln empfohlen, unabhängig von Priorisierung)
 
+**Status:** Offen (folgt dem Status von E1 in der Security-Tabelle unten)
+
 Beim Klonen eines Repos über die App landet die credential-tragende URL
 (`https://user:token@host/...`) über `git clone` selbst dauerhaft und im Klartext
 in der `.git/config` des neuen Repos (`remote.origin.url`) — unabhängig davon,

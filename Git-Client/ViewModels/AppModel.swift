@@ -238,6 +238,7 @@ final class AppModel {
 
     private func refreshLocalStatus(repoID: UUID, service: GitService) async {
         var st = repoStatus[repoID] ?? RepoStatus()
+        st.pathExists = FileManager.default.fileExists(atPath: service.repositoryPath.path)
         st.currentBranch = await service.currentBranch()
         st.hasUncommittedChanges = await service.hasUncommittedChanges()
         st.lastCommitDate = await service.lastCommitDate()

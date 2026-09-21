@@ -21,6 +21,10 @@ nonisolated struct RepoStatus: Equatable, Sendable {
     var hasUncommittedChanges: Bool = false
     /// Datum des neuesten lokalen Commits (HEAD).
     var lastCommitDate: Date? = nil
+    /// Existiert der Repository-Ordner noch auf der Festplatte. Wird einmalig bei der
+    /// Aktualisierung dieses Status berechnet (siehe AppModel.refreshLocalStatus), nicht
+    /// bei jedem Zeilen-Render in der Übersichtsliste.
+    var pathExists: Bool = true
 
     /// true wenn der Server Commits hat, die lokal fehlen.
     var isBehind: Bool { hasUpstream && behindCount > 0 }
@@ -32,11 +36,17 @@ nonisolated struct RepoStatus: Equatable, Sendable {
         !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Kompakte deutsche Relativzeitdarstellung eines Datums (z.B. „vor 3 Std.", „vor 2 Tg.").
-    static func relativeLabel(from date: Date, to now: Date = Date()) -> String {
+    /// Gecachter Formatter statt einer Neuallokation (inkl. Locale-Aufbau) pro Aufruf —
+    /// gleiches Muster wie GitLogParser.dateFormatter.
+    nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: "de_DE")
         f.unitsStyle = .abbreviated
-        return f.localizedString(for: date, relativeTo: now)
+        return f
+    }()
+
+    /// Kompakte deutsche Relativzeitdarstellung eines Datums (z.B. „vor 3 Std.", „vor 2 Tg.").
+    static func relativeLabel(from date: Date, to now: Date = Date()) -> String {
+        relativeFormatter.localizedString(for: date, relativeTo: now)
     }
 }

@@ -929,6 +929,37 @@ struct GitServiceIntegrationTests {
         let result = await svc.loadSingleCommit(sha: String(repeating: "0", count: 40))
         #expect(result == nil)
     }
+
+    @Test("loadCommits(shas:) lädt mehrere Commits in einem Aufruf")
+    func loadCommitsBySHAsMultiple() async throws {
+        let f = repoURL.appendingPathComponent("second.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Second commit")
+
+        let svc = GitService(repositoryPath: repoURL)
+        let all = try await svc.loadCommits()
+        #expect(all.count == 2)
+
+        let shas = all.map(\.sha)
+        let loaded = try await svc.loadCommits(shas: shas)
+        #expect(Set(loaded.map(\.sha)) == Set(shas))
+    }
+
+    @Test("loadCommits(shas:) toleriert doppelte SHAs")
+    func loadCommitsBySHAsDuplicates() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let first = try await svc.loadCommits().first!
+        let loaded = try await svc.loadCommits(shas: [first.sha, first.sha])
+        #expect(loaded.allSatisfy { $0.sha == first.sha })
+    }
+
+    @Test("loadCommits(shas:) mit leerem Array gibt leeres Ergebnis ohne git-Aufruf")
+    func loadCommitsBySHAsEmpty() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let loaded = try await svc.loadCommits(shas: [])
+        #expect(loaded.isEmpty)
+    }
 }
 
 // MARK: - RepositoryViewModel
@@ -3108,6 +3139,20 @@ struct RepoStatusTests {
         st.behindCount = 3
         #expect(st.isBehind)
     }
+
+    // pathExists
+
+    @Test("pathExists ist standardmäßig true")
+    func pathExistsDefaultsToTrue() {
+        #expect(RepoStatus().pathExists)
+    }
+
+    @Test("pathExists lässt sich auf false setzen")
+    func pathExistsCanBeSetFalse() {
+        var st = RepoStatus()
+        st.pathExists = false
+        #expect(!st.pathExists)
+    }
 }
 
 // MARK: - CommandPaletteResult
@@ -3836,11 +3881,16 @@ struct AppModelMonitoringTests {
         // Mit vorhandenem .git-Verzeichnis wird die Ausführung über guard !repos.isEmpty fortgesetzt.
         model.addRepository(name: "TestRepo", path: repoURL)
 
-        // Async-Task in startMonitoring (localRefSignature + refreshLocalStatus) ablaufen lassen.
-        // Wir prüfen nur den zuverlässigen Synchron-Zustand; async-Ergebnisse sind timing-abhängig.
-        try await Task.sleep(for: .milliseconds(1500))
-
         #expect(model.bookmarkNodes.count == 1)
+        let bookmark = try #require(model.bookmarkNodes.allRepositories().first)
+
+        // Polling statt festem Sleep (Timeout 5 s) — der Async-Task in startMonitoring
+        // (localRefSignature + refreshLocalStatus) läuft unstrukturiert im Hintergrund.
+        for _ in 0..<100 {
+            if model.repoStatus[bookmark.id] != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(model.repoStatus[bookmark.id]?.pathExists == true)
     }
 
     @Test("pollRemotes erkennt keine Neuigkeiten, wenn der Server unverändert ist")

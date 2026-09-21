@@ -72,6 +72,21 @@ actor GitService {
         return GitLogParser.parse(output).first
     }
 
+    /// Lädt mehrere einzelne Commits per SHA in **einem** Subprozess (`git log --no-walk`)
+    /// statt eines Subprozesses pro SHA. Wird verwendet, um mehrere Branch-Tips nachzuladen,
+    /// die außerhalb des normalen Fensters liegen. `shas` dürfen doppelt vorkommen und in
+    /// beliebiger Reihenfolge sein — die Ausgabe wird unverändert vom bestehenden Parser
+    /// verarbeitet, die Aufrufer sortieren/deduplizieren ohnehin nach dem Zusammenführen.
+    func loadCommits(shas: [String]) async throws -> [Commit] {
+        guard !shas.isEmpty else { return [] }
+        let format = "--pretty=format:\(GitLogParser.formatString)"
+        let output = try await runner.runOrThrow(
+            ["log", "--no-walk", format] + shas,
+            workingDirectory: repositoryPath
+        )
+        return GitLogParser.parse(output)
+    }
+
     // MARK: - Branches
 
     func loadBranches() async throws -> [Branch] {

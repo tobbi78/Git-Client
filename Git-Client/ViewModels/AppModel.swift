@@ -257,7 +257,7 @@ final class AppModel {
     // Remote-Check (nur lokale FSEvents-Erkennung) — der manuelle "Vom Server prüfen"-Button
     // (RepositoryViewModel.fetch) funktioniert für diese Repos aber problemlos über den
     // lokal konfigurierten Remote-Namen. Aktuell bewusst so gelassen (Stand 2026-09-15);
-    // falls gewünscht: guard auf GitService.firstRemoteName() statt bookmark.remoteURL
+    // falls gewünscht: guard auf `try? await service.remoteName()` statt bookmark.remoteURL
     // umstellen, analog zum manuellen Fetch-Pfad.
     //
     // Zugriffsebene bewusst nicht `private`: Tests rufen diese Methode direkt auf, um nicht

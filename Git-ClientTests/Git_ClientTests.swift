@@ -744,6 +744,36 @@ struct GitErrorTests {
     }
 }
 
+// MARK: - GitRunner — Nebenläufigkeit
+
+@Suite("GitRunner — Nebenläufigkeit")
+struct GitRunnerConcurrencyTests {
+
+    @Test("N gleichzeitige Aufrufe sind deutlich schneller als N serielle Aufrufe")
+    func concurrentCallsAreFasterThanSerial() async throws {
+        let count = 5
+
+        let serialStart = Date()
+        for _ in 0..<count {
+            _ = try await GitRunner.shared.run(["--version"])
+        }
+        let serialDuration = Date().timeIntervalSince(serialStart)
+
+        let concurrentStart = Date()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<count {
+                group.addTask { _ = try? await GitRunner.shared.run(["--version"]) }
+            }
+        }
+        let concurrentDuration = Date().timeIntervalSince(concurrentStart)
+
+        // Bei einer (fehlerhaften) Serialisierung durch den Actor-Executor wäre die
+        // parallele Variante nicht schneller als die serielle. Großzügiger Spielraum
+        // gegen CI-Schwankungen, erkennt aber echte Serialisierung zuverlässig.
+        #expect(concurrentDuration < serialDuration * 0.6)
+    }
+}
+
 // MARK: - GitService Integration
 
 private func sh(_ args: String...) throws {

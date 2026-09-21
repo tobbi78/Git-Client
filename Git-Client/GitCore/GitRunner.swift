@@ -3,7 +3,9 @@
 //  Git-Client
 //
 //  Führt git-Kommandos als Subprozess aus und liefert das Ergebnis async zurück.
-//  Isoliert als actor, damit mehrere gleichzeitige Aufrufe serialisiert werden.
+//  `run`/`runOrThrow` sind bewusst `nonisolated` — mehrere gleichzeitige Aufrufe
+//  laufen parallel statt seriell durch den Actor-Executor (siehe Kommentar an `run`).
+//  `actor` bleibt hier nur als Kapselung für `.shared`/`gitPath`, nicht zur Serialisierung.
 //
 
 import Foundation
@@ -25,39 +27,26 @@ actor GitRunner {
     }
 
     /// Führt git mit den gegebenen Argumenten im angegebenen Verzeichnis aus.
-    func run(_ arguments: [String], workingDirectory: URL? = nil) async throws -> GitResult {
+    ///
+    /// `nonisolated`, damit der Aufruf NICHT auf dem seriellen Actor-Executor läuft:
+    /// sonst würde ein einzelner langsamer Aufruf (z.B. ein `fetch` beim Auto-Refresh-
+    /// Polling, 10-60s) jeden anderen Git-Aufruf der App für seine gesamte Laufzeit
+    /// blockieren, da `waitUntilExit()`/`group.wait()` unten synchron blockieren.
+    /// Ohne `nonisolated` wäre das der Actor-Executor selbst — mit `nonisolated` ist es
+    /// nur der dedizierte GCD-Block, den mehrere gleichzeitige Aufrufe unabhängig
+    /// voneinander bekommen (echte Parallelität statt Serialisierung durch den Actor).
+    ///
+    /// Bewusster Trade-off: zwei schreibende git-Kommandos (checkout/fetch/clone) auf
+    /// demselben Repo können jetzt exakt gleichzeitig laufen; trifft das ein, lässt
+    /// Gits eigenes Datei-Lock (.git/index.lock) eines der beiden regulär fehlschlagen
+    /// (via GitError.nonZeroExit bereits abgefangen). Kein neues Risiko — die
+    /// Actor-Serialisierung garantierte nie eine sinnvolle Aufruf-Reihenfolge.
+    nonisolated func run(_ arguments: [String], workingDirectory: URL? = nil) async throws -> GitResult {
         guard FileManager.default.fileExists(atPath: gitPath) else {
             throw GitError.gitNotFound
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: gitPath)
-            process.arguments = arguments
-
-            if let workingDirectory {
-                process.currentDirectoryURL = workingDirectory
-            }
-
-            // Verhindert, dass git bei fehlenden Credentials interaktiv nach einem
-            // Passwort fragt (würde den Prozess hängen lassen). Für eine GUI-App immer
-            // sinnvoll; ohne diesen Schutz würde ls-remote/fetch an einem Prompt hängen.
-            var env = ProcessInfo.processInfo.environment
-            env["GIT_TERMINAL_PROMPT"] = "0"
-            process.environment = env
-
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
-
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-
             // Liest stdout/stderr parallel in Background-Threads, damit der Pipe-Buffer
             // (macOS: ~64 KB) nicht vollläuft. Ohne paralleles Lesen blockiert git bei
             // großen Ausgaben (z.B. git log auf einem großen Repo), wartet auf das
@@ -75,33 +64,62 @@ actor GitRunner {
             // hier auf niedriger priorisierte Reader-Threads wartete (Xcode Runtime
             // Issue). `.userInitiated` passt zu den tatsächlichen Aufrufern (UI-nahe
             // ViewModel-Actions), ist aber weiterhin niedriger als `.userInteractive`.
-            let group = DispatchGroup()
-            let stdoutCollector = DataCollector()
-            let stderrCollector = DataCollector()
-
-            group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
-                stdoutCollector.data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: self.gitPath)
+                process.arguments = arguments
+
+                if let workingDirectory {
+                    process.currentDirectoryURL = workingDirectory
+                }
+
+                // Verhindert, dass git bei fehlenden Credentials interaktiv nach einem
+                // Passwort fragt (würde den Prozess hängen lassen). Für eine GUI-App immer
+                // sinnvoll; ohne diesen Schutz würde ls-remote/fetch an einem Prompt hängen.
+                var env = ProcessInfo.processInfo.environment
+                env["GIT_TERMINAL_PROMPT"] = "0"
+                process.environment = env
+
+                let stdoutPipe = Pipe()
+                let stderrPipe = Pipe()
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let group = DispatchGroup()
+                let stdoutCollector = DataCollector()
+                let stderrCollector = DataCollector()
+
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    stdoutCollector.data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                    group.leave()
+                }
+
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    stderrCollector.data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    group.leave()
+                }
+
+                process.waitUntilExit()
+                group.wait()
+
+                let stdout = String(data: stdoutCollector.data, encoding: .utf8) ?? ""
+                let stderr = String(data: stderrCollector.data, encoding: .utf8) ?? ""
+
+                continuation.resume(returning: GitResult(
+                    stdout: stdout,
+                    stderr: stderr,
+                    exitCode: process.terminationStatus
+                ))
             }
-
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                stderrCollector.data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
-            }
-
-            process.waitUntilExit()
-            group.wait()
-
-            let stdout = String(data: stdoutCollector.data, encoding: .utf8) ?? ""
-            let stderr = String(data: stderrCollector.data, encoding: .utf8) ?? ""
-
-            continuation.resume(returning: GitResult(
-                stdout: stdout,
-                stderr: stderr,
-                exitCode: process.terminationStatus
-            ))
         }
     }
 
@@ -109,7 +127,7 @@ actor GitRunner {
     /// Discardable, da mehrere Aufrufer (clone, fetch, fastForward) nur am Erfolg/
     /// Fehler interessiert sind, nicht am stdout-Inhalt.
     @discardableResult
-    func runOrThrow(_ arguments: [String], workingDirectory: URL? = nil) async throws -> String {
+    nonisolated func runOrThrow(_ arguments: [String], workingDirectory: URL? = nil) async throws -> String {
         let result = try await run(arguments, workingDirectory: workingDirectory)
         guard result.exitCode == 0 else {
             throw GitError.nonZeroExit(code: result.exitCode, stderr: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))

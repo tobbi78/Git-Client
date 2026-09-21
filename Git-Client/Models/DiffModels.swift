@@ -9,7 +9,6 @@ nonisolated enum DiffLineType: Sendable {
     case context
     case addition
     case deletion
-    case hunkHeader
 }
 
 nonisolated struct DiffLine: Identifiable, Sendable {

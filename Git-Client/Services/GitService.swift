@@ -16,37 +16,32 @@ actor GitService {
         self.repositoryPath = repositoryPath
     }
 
+    /// Injiziert Zugangsdaten in `remoteURL`, falls beide angegeben sind — sonst bleibt
+    /// die URL unverändert. Zentrale Stelle für den Credential-URL-Aufbau, der zuvor in
+    /// clone/fetch/remoteHeads dreifach dupliziert war.
+    nonisolated private static func authenticatedURL(
+        _ remoteURL: String, username: String?, password: String?
+    ) -> String {
+        guard let user = username, !user.isEmpty,
+              let pass = password, !pass.isEmpty,
+              var components = URLComponents(string: remoteURL) else { return remoteURL }
+        components.user = user
+        components.password = pass
+        return components.string ?? remoteURL
+    }
+
     // MARK: - Clone
 
     /// Klont `remoteURL` nach `localPath`. Credentials werden als URL-Parameter übergeben
     /// und verlassen die App nie als Klartext auf der Festplatte.
     func clone(remoteURL: String, to localPath: URL, username: String?, password: String?) async throws {
-        var urlString = remoteURL
-        if let user = username, !user.isEmpty,
-           let pass = password, !pass.isEmpty,
-           var components = URLComponents(string: remoteURL) {
-            components.user = user
-            components.password = pass
-            urlString = components.string ?? remoteURL
-        }
+        let urlString = Self.authenticatedURL(remoteURL, username: username, password: password)
         // Elternverzeichnis muss existieren; git clone erstellt localPath selbst.
         let parent = localPath.deletingLastPathComponent()
         try await runner.runOrThrow(
             ["clone", "--", urlString, localPath.path],
             workingDirectory: parent
         )
-    }
-
-    // MARK: - Validation
-
-    func validateRepository() async throws {
-        let result = try await runner.run(
-            ["rev-parse", "--is-inside-work-tree"],
-            workingDirectory: repositoryPath
-        )
-        guard result.exitCode == 0 else {
-            throw GitError.notARepository
-        }
     }
 
     // MARK: - Commit-Historie
@@ -96,68 +91,7 @@ actor GitService {
             ["for-each-ref", "--format=\(format)", "refs/heads", "refs/remotes"],
             workingDirectory: repositoryPath
         )
-        return parseBranches(from: output)
-    }
-
-    nonisolated func parseBranches(from output: String) -> [Branch] {
-        output.components(separatedBy: "\n")
-            .filter { !$0.isEmpty }
-            .compactMap { line -> Branch? in
-                let fields = line.components(separatedBy: "\t")
-                guard fields.count >= 3 else { return nil }
-                let refname = fields[0]
-                let sha = fields[1]
-                let isCurrent = fields[2] == "*"
-                // Tracking-Felder defensiv lesen — ältere Zeilen (< 5 Felder) bleiben nil
-                let upstreamShort = fields.count >= 4 ? fields[3] : ""
-                let trackString   = fields.count >= 5 ? fields[4] : ""
-
-                if refname.hasPrefix("refs/heads/") {
-                    let name = String(refname.dropFirst("refs/heads/".count))
-                    // Upstream nur setzen, wenn tatsächlich konfiguriert
-                    let hasUpstream = !upstreamShort.isEmpty
-                    let tracking = hasUpstream ? parseTrack(trackString) : nil
-                    return Branch(name: name, shortName: name, isCurrent: isCurrent,
-                                  isRemote: false, remoteName: nil, tipSha: sha,
-                                  upstreamName: hasUpstream ? upstreamShort : nil,
-                                  ahead: tracking?.ahead, behind: tracking?.behind)
-                }
-
-                if refname.hasPrefix("refs/remotes/") {
-                    let remoteRef = String(refname.dropFirst("refs/remotes/".count))
-                    // refs/remotes/origin/HEAD überspringen
-                    if remoteRef.hasSuffix("/HEAD") { return nil }
-                    let slashIdx = remoteRef.firstIndex(of: "/") ?? remoteRef.endIndex
-                    let remoteName = String(remoteRef[..<slashIdx])
-                    let shortName = slashIdx < remoteRef.endIndex
-                        ? String(remoteRef[remoteRef.index(after: slashIdx)...])
-                        : remoteRef
-                    return Branch(name: remoteRef, shortName: shortName, isCurrent: false,
-                                  isRemote: true, remoteName: remoteName, tipSha: sha,
-                                  upstreamName: nil, ahead: nil, behind: nil)
-                }
-
-                return nil
-            }
-    }
-
-    /// Parst den `%(upstream:track,nobracket)`-String (z.B. „ahead 2, behind 3")
-    /// und extrahiert die Anzahl der vorausgehenden / fehlenden Commits.
-    /// Bei `gone`, leerem String oder nicht erkanntem Format wird (0, 0) zurückgegeben.
-    nonisolated func parseTrack(_ track: String) -> (ahead: Int, behind: Int) {
-        guard !track.isEmpty, track != "gone" else { return (0, 0) }
-        var ahead = 0
-        var behind = 0
-        // Kommaseparierte Segmente: "ahead 2", "behind 3"
-        for segment in track.components(separatedBy: ",") {
-            let part = segment.trimmingCharacters(in: .whitespaces)
-            if part.hasPrefix("ahead "), let n = Int(part.dropFirst("ahead ".count)) {
-                ahead = n
-            } else if part.hasPrefix("behind "), let n = Int(part.dropFirst("behind ".count)) {
-                behind = n
-            }
-        }
-        return (ahead, behind)
+        return BranchParser.parseBranches(from: output)
     }
 
     // MARK: - Tags
@@ -170,19 +104,7 @@ actor GitService {
             ["for-each-ref", "--format=\(format)", "refs/tags"],
             workingDirectory: repositoryPath
         )
-        return parseTags(from: output)
-    }
-
-    func parseTags(from output: String) -> [GitTag] {
-        output.components(separatedBy: "\n")
-            .filter { !$0.isEmpty }
-            .compactMap { line -> GitTag? in
-                let fields = line.components(separatedBy: "\t")
-                guard fields.count >= 2 else { return nil }
-                let deref = fields.count >= 3 ? fields[2] : ""
-                let commitSha = deref.isEmpty ? fields[1] : deref
-                return GitTag(name: fields[0], targetSha: commitSha)
-            }
+        return BranchParser.parseTags(from: output)
     }
 
     // MARK: - Remote / Sync
@@ -208,13 +130,8 @@ actor GitService {
     func fetch(remoteURL: String?, username: String?, password: String?) async throws {
         guard let remote = try await remoteName() else { return }
 
-        if let remoteURL, !remoteURL.isEmpty,
-           let user = username, !user.isEmpty,
-           let pass = password, !pass.isEmpty,
-           var components = URLComponents(string: remoteURL) {
-            components.user = user
-            components.password = pass
-            let authURL = components.string ?? remoteURL
+        if let remoteURL, !remoteURL.isEmpty {
+            let authURL = Self.authenticatedURL(remoteURL, username: username, password: password)
             try await runner.runOrThrow(
                 ["fetch", "--prune", authURL, "+refs/heads/*:refs/remotes/\(remote)/*"],
                 workingDirectory: repositoryPath
@@ -390,17 +307,10 @@ actor GitService {
         username: String?,
         password: String?
     ) async throws -> [String: String] {
-        // Auth-URL aufbauen (analog fetch, GitService.swift:193)
+        // Auth-URL aufbauen (analog fetch)
         let remoteArg: String
-        if let urlString = remoteURL, !urlString.isEmpty,
-           let user = username, !user.isEmpty,
-           let pass = password, !pass.isEmpty,
-           var components = URLComponents(string: urlString) {
-            components.user = user
-            components.password = pass
-            remoteArg = components.string ?? urlString
-        } else if let urlString = remoteURL, !urlString.isEmpty {
-            remoteArg = urlString
+        if let urlString = remoteURL, !urlString.isEmpty {
+            remoteArg = Self.authenticatedURL(urlString, username: username, password: password)
         } else {
             // Fallback: konfigurierten Remote-Namen verwenden
             guard let remote = try await remoteName() else {
@@ -414,11 +324,6 @@ actor GitService {
             workingDirectory: repositoryPath
         )
         return RepoRefSnapshot.parseLsRemote(output)
-    }
-
-    /// Gibt den ersten konfigurierten Remote-Namen zurück (analog `remoteName()` ohne throws).
-    func firstRemoteName() async -> String? {
-        try? await remoteName()
     }
 
     // MARK: - Statistiken

@@ -726,11 +726,6 @@ struct GitErrorTests {
         #expect(GitError.gitNotFound.errorDescription?.isEmpty == false)
     }
 
-    @Test("notARepository hat nicht-leere Fehlermeldung")
-    func notARepositoryDescription() {
-        #expect(GitError.notARepository.errorDescription?.isEmpty == false)
-    }
-
     @Test("nonZeroExit enthält Exit-Code in der Meldung")
     func nonZeroExitCode() {
         let err = GitError.nonZeroExit(code: 128, stderr: "")
@@ -802,26 +797,6 @@ struct GitServiceIntegrationTests {
         try "# Test\n".write(to: readme, atomically: true, encoding: .utf8)
         try sh("git", "-C", repoURL.path, "add", ".")
         try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
-    }
-
-    @Test("validateRepository erkennt gültiges Repository")
-    func validateValid() async throws {
-        let svc = GitService(repositoryPath: repoURL)
-        try await svc.validateRepository()
-    }
-
-    @Test("validateRepository wirft für ungültiges Verzeichnis")
-    func validateInvalid() async throws {
-        let notRepo = FileManager.default.temporaryDirectory
-            .appendingPathComponent("notrepo-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: notRepo, withIntermediateDirectories: true)
-        let svc = GitService(repositoryPath: notRepo)
-        do {
-            try await svc.validateRepository()
-            Issue.record("validateRepository hätte werfen sollen")
-        } catch is GitError {
-            // erwartet
-        }
     }
 
     @Test("loadCommits liefert Initial-Commit")
@@ -1066,102 +1041,6 @@ struct RepositoryViewModelTests {
     }
 }
 
-// MARK: - GitService (parseBranches / parseTags)
-
-@Suite("GitService Parser")
-struct GitServiceParserTests {
-
-    private let service = GitService(repositoryPath: URL(fileURLWithPath: "/tmp"))
-
-    @Test("parseBranches parst lokalen Branch")
-    func localBranch() async {
-        let output = "refs/heads/main\tabc123\t*\n"
-        let branches = service.parseBranches(from: output)
-        #expect(branches.count == 1)
-        #expect(branches[0].name == "main")
-        #expect(branches[0].tipSha == "abc123")
-        #expect(branches[0].isCurrent)
-        #expect(!branches[0].isRemote)
-    }
-
-    @Test("parseBranches parst nicht-aktuellen Branch")
-    func nonCurrentBranch() async {
-        let output = "refs/heads/feature/xyz\tdef456\t \n"
-        let branches = service.parseBranches(from: output)
-        #expect(branches.count == 1)
-        #expect(branches[0].name == "feature/xyz")
-        #expect(!branches[0].isCurrent)
-    }
-
-    @Test("parseBranches parst Remote-Branch")
-    func remoteBranch() async {
-        let output = "refs/remotes/origin/main\t789abc\t \n"
-        let branches = service.parseBranches(from: output)
-        #expect(branches.count == 1)
-        #expect(branches[0].isRemote)
-        #expect(branches[0].remoteName == "origin")
-        #expect(branches[0].shortName == "main")
-    }
-
-    @Test("parseBranches überspringt refs/remotes/origin/HEAD")
-    func skipsRemoteHEAD() async {
-        let output = "refs/remotes/origin/HEAD\tabc123\t \n"
-        let branches = service.parseBranches(from: output)
-        #expect(branches.isEmpty)
-    }
-
-    @Test("parseBranches ignoriert leere Zeilen")
-    func emptyLinesIgnored() async {
-        let output = "\nrefs/heads/main\tabc\t*\n\n"
-        let branches = service.parseBranches(from: output)
-        #expect(branches.count == 1)
-    }
-
-    @Test("parseBranches mehrere Branches")
-    func multipleBranches() async {
-        let output = """
-        refs/heads/main\taaa\t*
-        refs/heads/develop\tbbb\t
-        refs/remotes/origin/main\taaa\t
-        """
-        let branches = service.parseBranches(from: output)
-        #expect(branches.count == 3)
-    }
-
-    @Test("parseTags parst Lightweight-Tag")
-    func lightweightTag() async {
-        let output = "v1.0\tabc123\t\n"
-        let tags = await service.parseTags(from: output)
-        #expect(tags.count == 1)
-        #expect(tags[0].name == "v1.0")
-        #expect(tags[0].targetSha == "abc123")
-    }
-
-    @Test("parseTags verwendet Deref-SHA für annotierten Tag")
-    func annotatedTag() async {
-        // Annotierter Tag: objectname zeigt auf Tag-Objekt, *objectname auf Commit
-        let output = "v2.0\ttagobj1\tcommit99\n"
-        let tags = await service.parseTags(from: output)
-        #expect(tags.count == 1)
-        #expect(tags[0].targetSha == "commit99")
-    }
-
-    @Test("parseTags ignoriert leere Zeilen")
-    func emptyTagLines() async {
-        let output = "\nv1.0\tabc\t\n\n"
-        let tags = await service.parseTags(from: output)
-        #expect(tags.count == 1)
-    }
-
-    @Test("parseTags mehrere Tags")
-    func multipleTags() async {
-        let output = "v1.0\taaa\t\nv2.0\tbbb\tcommitC\n"
-        let tags = await service.parseTags(from: output)
-        #expect(tags.count == 2)
-        #expect(tags[0].name == "v1.0")
-        #expect(tags[1].targetSha == "commitC")
-    }
-}
 
 // MARK: - AppSettings
 
@@ -1870,43 +1749,39 @@ struct GitServiceSearchTests {
 @Suite("BranchParserTests")
 struct BranchParserTests {
 
-    /// Hilfsfunktion: GitService-Instanz mit dummy-Pfad (nur Parser-Methoden werden getestet)
-    private func service() -> GitService { GitService(repositoryPath: URL(fileURLWithPath: "/tmp")) }
-
     // MARK: parseTrack
 
     @Test("parseTrack: ahead und behind")
     func parseTrackAheadAndBehind() {
-        let svc = service()
-        let result = svc.parseTrack("ahead 2, behind 3")
+        let result = BranchParser.parseTrack("ahead 2, behind 3")
         #expect(result.ahead == 2)
         #expect(result.behind == 3)
     }
 
     @Test("parseTrack: nur ahead")
     func parseTrackAheadOnly() {
-        let result = service().parseTrack("ahead 1")
+        let result = BranchParser.parseTrack("ahead 1")
         #expect(result.ahead == 1)
         #expect(result.behind == 0)
     }
 
     @Test("parseTrack: nur behind")
     func parseTrackBehindOnly() {
-        let result = service().parseTrack("behind 4")
+        let result = BranchParser.parseTrack("behind 4")
         #expect(result.ahead == 0)
         #expect(result.behind == 4)
     }
 
     @Test("parseTrack: leer → 0/0")
     func parseTrackEmpty() {
-        let result = service().parseTrack("")
+        let result = BranchParser.parseTrack("")
         #expect(result.ahead == 0)
         #expect(result.behind == 0)
     }
 
     @Test("parseTrack: gone → 0/0")
     func parseTrackGone() {
-        let result = service().parseTrack("gone")
+        let result = BranchParser.parseTrack("gone")
         #expect(result.ahead == 0)
         #expect(result.behind == 0)
     }
@@ -1919,12 +1794,66 @@ struct BranchParserTests {
         "\(refname)\t\(sha)\t\(head)\t\(upstream)\t\(track)"
     }
 
+    @Test("parseBranches parst lokalen Branch")
+    func localBranch() {
+        let output = "refs/heads/main\tabc123\t*\n"
+        let branches = BranchParser.parseBranches(from: output)
+        #expect(branches.count == 1)
+        #expect(branches[0].name == "main")
+        #expect(branches[0].tipSha == "abc123")
+        #expect(branches[0].isCurrent)
+        #expect(!branches[0].isRemote)
+    }
+
+    @Test("parseBranches parst nicht-aktuellen Branch")
+    func nonCurrentBranch() {
+        let output = "refs/heads/feature/xyz\tdef456\t \n"
+        let branches = BranchParser.parseBranches(from: output)
+        #expect(branches.count == 1)
+        #expect(branches[0].name == "feature/xyz")
+        #expect(!branches[0].isCurrent)
+    }
+
+    @Test("parseBranches parst Remote-Branch")
+    func remoteBranch() {
+        let output = "refs/remotes/origin/main\t789abc\t \n"
+        let branches = BranchParser.parseBranches(from: output)
+        #expect(branches.count == 1)
+        #expect(branches[0].isRemote)
+        #expect(branches[0].remoteName == "origin")
+        #expect(branches[0].shortName == "main")
+    }
+
+    @Test("parseBranches überspringt refs/remotes/origin/HEAD")
+    func skipsRemoteHEAD() {
+        let output = "refs/remotes/origin/HEAD\tabc123\t \n"
+        let branches = BranchParser.parseBranches(from: output)
+        #expect(branches.isEmpty)
+    }
+
+    @Test("parseBranches ignoriert leere Zeilen")
+    func emptyLinesIgnored() {
+        let output = "\nrefs/heads/main\tabc\t*\n\n"
+        let branches = BranchParser.parseBranches(from: output)
+        #expect(branches.count == 1)
+    }
+
+    @Test("parseBranches mehrere Branches")
+    func multipleBranches() {
+        let output = """
+        refs/heads/main\taaa\t*
+        refs/heads/develop\tbbb\t
+        refs/remotes/origin/main\taaa\t
+        """
+        let branches = BranchParser.parseBranches(from: output)
+        #expect(branches.count == 3)
+    }
+
     @Test("Lokaler Branch mit ahead 2 / behind 3")
     func localBranchAheadBehind() {
-        let svc = service()
         let input = line(refname: "refs/heads/main", upstream: "origin/main",
                          track: "ahead 2, behind 3")
-        let branches = svc.parseBranches(from: input)
+        let branches = BranchParser.parseBranches(from: input)
         #expect(branches.count == 1)
         let b = branches[0]
         #expect(b.upstreamName == "origin/main")
@@ -1934,7 +1863,7 @@ struct BranchParserTests {
 
     @Test("Lokaler Branch nur ahead")
     func localBranchAheadOnly() {
-        let b = service().parseBranches(from:
+        let b = BranchParser.parseBranches(from:
             line(refname: "refs/heads/feature", upstream: "origin/feature", track: "ahead 1")
         ).first
         #expect(b?.ahead == 1)
@@ -1943,7 +1872,7 @@ struct BranchParserTests {
 
     @Test("Lokaler Branch nur behind")
     func localBranchBehindOnly() {
-        let b = service().parseBranches(from:
+        let b = BranchParser.parseBranches(from:
             line(refname: "refs/heads/main", upstream: "origin/main", track: "behind 4")
         ).first
         #expect(b?.ahead == 0)
@@ -1952,7 +1881,7 @@ struct BranchParserTests {
 
     @Test("Lokaler Branch mit Upstream, leerer Track → 0/0")
     func localBranchUpstreamNoTrack() {
-        let b = service().parseBranches(from:
+        let b = BranchParser.parseBranches(from:
             line(refname: "refs/heads/main", upstream: "origin/main", track: "")
         ).first
         #expect(b?.upstreamName == "origin/main")
@@ -1962,7 +1891,7 @@ struct BranchParserTests {
 
     @Test("Lokaler Branch ohne Upstream → nil")
     func localBranchNoUpstream() {
-        let b = service().parseBranches(from:
+        let b = BranchParser.parseBranches(from:
             line(refname: "refs/heads/local", upstream: "", track: "")
         ).first
         #expect(b?.upstreamName == nil)
@@ -1972,7 +1901,7 @@ struct BranchParserTests {
 
     @Test("Lokaler Branch mit gone → 0/0, Upstream gesetzt")
     func localBranchGone() {
-        let b = service().parseBranches(from:
+        let b = BranchParser.parseBranches(from:
             line(refname: "refs/heads/old", upstream: "origin/old", track: "gone")
         ).first
         #expect(b?.upstreamName == "origin/old")
@@ -1982,7 +1911,7 @@ struct BranchParserTests {
 
     @Test("Remote Branch hat keine Tracking-Felder")
     func remoteBranchNoTracking() {
-        let b = service().parseBranches(from:
+        let b = BranchParser.parseBranches(from:
             line(refname: "refs/remotes/origin/main", upstream: "", track: "")
         ).first
         #expect(b?.isRemote == true)
@@ -1994,7 +1923,7 @@ struct BranchParserTests {
     @Test("Rückwärtskompatibilität: 3-Feld-Zeile parst ohne Crash, Tracking nil")
     func threeFieldLineBackwardCompat() {
         let input = "refs/heads/main\tabc1234\t*"
-        let b = service().parseBranches(from: input).first
+        let b = BranchParser.parseBranches(from: input).first
         #expect(b != nil)
         #expect(b?.upstreamName == nil)
         #expect(b?.ahead == nil)
@@ -2003,8 +1932,44 @@ struct BranchParserTests {
     @Test("refs/remotes/origin/HEAD wird übersprungen")
     func remoteHeadSkipped() {
         let input = line(refname: "refs/remotes/origin/HEAD")
-        let branches = service().parseBranches(from: input)
+        let branches = BranchParser.parseBranches(from: input)
         #expect(branches.isEmpty)
+    }
+
+    // MARK: parseTags
+
+    @Test("parseTags parst Lightweight-Tag")
+    func lightweightTag() {
+        let output = "v1.0\tabc123\t\n"
+        let tags = BranchParser.parseTags(from: output)
+        #expect(tags.count == 1)
+        #expect(tags[0].name == "v1.0")
+        #expect(tags[0].targetSha == "abc123")
+    }
+
+    @Test("parseTags verwendet Deref-SHA für annotierten Tag")
+    func annotatedTag() {
+        // Annotierter Tag: objectname zeigt auf Tag-Objekt, *objectname auf Commit
+        let output = "v2.0\ttagobj1\tcommit99\n"
+        let tags = BranchParser.parseTags(from: output)
+        #expect(tags.count == 1)
+        #expect(tags[0].targetSha == "commit99")
+    }
+
+    @Test("parseTags ignoriert leere Zeilen")
+    func emptyTagLines() {
+        let output = "\nv1.0\tabc\t\n\n"
+        let tags = BranchParser.parseTags(from: output)
+        #expect(tags.count == 1)
+    }
+
+    @Test("parseTags mehrere Tags")
+    func multipleTags() {
+        let output = "v1.0\taaa\t\nv2.0\tbbb\tcommitC\n"
+        let tags = BranchParser.parseTags(from: output)
+        #expect(tags.count == 2)
+        #expect(tags[0].name == "v1.0")
+        #expect(tags[1].targetSha == "commitC")
     }
 }
 
@@ -3815,12 +3780,6 @@ extension GitServiceLocalStatusTests {
         #expect(sig.keys.contains(where: { $0.hasPrefix("refs/heads/") }))
     }
 
-    @Test("firstRemoteName liefert nil ohne konfigurierten Remote")
-    func firstRemoteNameIsNilWithoutRemote() async {
-        let svc = GitService(repositoryPath: repoURL)
-        let name = await svc.firstRemoteName()
-        #expect(name == nil)
-    }
 }
 
 // MARK: - GitService — aheadBehind (Erweiterung)

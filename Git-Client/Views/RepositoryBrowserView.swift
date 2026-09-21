@@ -168,7 +168,10 @@ private struct BookmarkNodeView: View {
     // MARK: - Repository-Zeile
 
     private func repoRow(_ repo: RepositoryBookmark) -> some View {
-        let pathExists = FileManager.default.fileExists(atPath: repo.path.path)
+        // Aus dem gecachten Status lesen statt bei jedem Render erneut zu stat()en;
+        // Fallback nur für das kurze Zeitfenster, bevor der erste Status vorliegt.
+        let pathExists = appModel.repoStatus[repo.id]?.pathExists
+            ?? FileManager.default.fileExists(atPath: repo.path.path)
         return HStack(spacing: 8) {
             Image(systemName: pathExists ? "externaldrive" : "externaldrive.badge.exclamationmark")
                 .font(.callout)

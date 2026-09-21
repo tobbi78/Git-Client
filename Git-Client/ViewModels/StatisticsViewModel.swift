@@ -34,12 +34,19 @@ final class StatisticsViewModel {
             let (authors, timestamps, branches, tags) =
                 try await (authorsTask, timestampsTask, branchesTask, tagsTask)
 
-            statistics = RepositoryStatistics.aggregate(
-                timestampLines: timestamps,
-                authors: authors,
-                branchCount: branches.filter { !$0.isRemote }.count,
-                tagCount: tags.count
-            )
+            let branchCount = branches.filter { !$0.isRemote }.count
+            let tagCount = tags.count
+            // Aggregation läuft auf einer Hintergrund-Task statt auf dem Main-Thread —
+            // bei sehr vielen Commits sonst ein spürbarer UI-Freeze (Calendar/Formatter-
+            // Aufrufe pro Commit).
+            statistics = await Task.detached {
+                RepositoryStatistics.aggregate(
+                    timestampLines: timestamps,
+                    authors: authors,
+                    branchCount: branchCount,
+                    tagCount: tagCount
+                )
+            }.value
         } catch {
             errorMessage = error.localizedDescription
         }

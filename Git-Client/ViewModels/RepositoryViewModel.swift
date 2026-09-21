@@ -120,6 +120,14 @@ final class RepositoryViewModel {
         })
     }
 
+    /// Baut die Graph-Zeilen auf einer Hintergrund-Task, statt den (bei vielen geladenen
+    /// Commits durchaus spürbaren) Lane-Assignment-Algorithmus auf dem Main-Thread laufen
+    /// zu lassen. `commits` wird als Snapshot übergeben, damit die `@MainActor`-isolierte
+    /// Property nicht aus der abgetrennten Task heraus gelesen werden muss.
+    private func buildGraphRows(from commits: [Commit]) async -> [GraphRow] {
+        await Task.detached { CommitGraphBuilder.build(from: commits) }.value
+    }
+
     func load() async {
         isLoading = true
         errorMessage = nil
@@ -140,7 +148,7 @@ final class RepositoryViewModel {
             canLoadMore = (firstPage.count == pageSize)
             // Branch-Tips, die außerhalb des geladenen Fensters liegen, einzeln nachladen.
             await loadMissingBranchTips()
-            graphRows = CommitGraphBuilder.build(from: commits)
+            graphRows = await buildGraphRows(from: commits)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -172,7 +180,7 @@ final class RepositoryViewModel {
             }
             commits.append(contentsOf: unique)
             commits.sort { $0.date > $1.date }
-            graphRows = CommitGraphBuilder.build(from: commits)
+            graphRows = await buildGraphRows(from: commits)
         } catch {
             // Fehler still ignorieren — canLoadMore bleibt true für erneuten Versuch beim nächsten Scroll
         }
@@ -181,22 +189,15 @@ final class RepositoryViewModel {
     /// Lädt Branch-Tip-Commits nach, die noch nicht in `commits` enthalten sind.
     private func loadMissingBranchTips() async {
         let loadedSHAs = Set(commits.map(\.sha))
-        let missingTips = branches
-            .map(\.tipSha)
-            .filter { !loadedSHAs.contains($0) }
+        // Set-Dedup: mehrere Branches können auf denselben Tip zeigen.
+        let missingTips = Array(Set(
+            branches.map(\.tipSha).filter { !loadedSHAs.contains($0) }
+        ))
         guard !missingTips.isEmpty else { return }
 
-        var additional: [Commit] = []
-        // Parallel nachladen — jeder Aufruf ist ein schnelles lokales `git log -1`
-        await withTaskGroup(of: Commit?.self) { group in
-            for sha in missingTips {
-                group.addTask { await self.service.loadSingleCommit(sha: sha) }
-            }
-            for await commit in group {
-                if let c = commit { additional.append(c) }
-            }
-        }
-        guard !additional.isEmpty else { return }
+        // Ein Subprozess für alle fehlenden Tips statt einem pro Tip (git log --no-walk).
+        guard let additional = try? await service.loadCommits(shas: missingTips),
+              !additional.isEmpty else { return }
         // Deduplizieren, nach Datum einordnen, damit der Graph-Algorithmus korrekte Reihenfolge hat
         let existing = Set(commits.map(\.sha))
         let unique = additional.filter { !existing.contains($0.sha) }
@@ -335,7 +336,7 @@ final class RepositoryViewModel {
             }
             searchPagedCount += page.count
             if page.count < pageSize { searchCanLoadMore = false }
-            searchGraphRows = CommitGraphBuilder.build(from: searchResults)
+            searchGraphRows = await buildGraphRows(from: searchResults)
         } catch {
             // Suchfehler still ignorieren — leeres Ergebnis bleibt sichtbar
         }

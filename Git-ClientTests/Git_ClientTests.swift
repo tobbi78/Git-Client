@@ -2345,6 +2345,95 @@ struct RepoRefSnapshotTests {
     }
 }
 
+// MARK: - BranchTree — Baumaufbau
+
+@Suite("BranchTree — Baumaufbau")
+struct BranchTreeTests {
+
+    private func makeBranch(name: String, isRemote: Bool = false, remoteName: String? = nil) -> Branch {
+        Branch(
+            name: name, shortName: name, isCurrent: false, isRemote: isRemote, remoteName: remoteName,
+            tipSha: "aaa0000000000000000000000000000000000000",
+            upstreamName: nil, ahead: nil, behind: nil
+        )
+    }
+
+    @Test("Branch ohne '/' wird zum Top-Level-Blatt")
+    func branchWithoutSlashIsTopLevelLeaf() {
+        let nodes = BranchTree.build([makeBranch(name: "main")], nameOf: \.name)
+        #expect(nodes.count == 1)
+        if case .leaf(let leaf) = nodes[0] {
+            #expect(leaf.displayName == "main")
+        } else {
+            Issue.record("Erwartete .leaf, bekam \(nodes[0])")
+        }
+    }
+
+    @Test("Ein '/' im Namen erzeugt einen Ordner mit einem Kind")
+    func oneSlashCreatesFolder() {
+        let nodes = BranchTree.build([makeBranch(name: "feature/login")], nameOf: \.name)
+        #expect(nodes.count == 1)
+        if case .folder(let name, let children) = nodes[0] {
+            #expect(name == "feature")
+            #expect(children.count == 1)
+            #expect(children[0].displayName == "login")
+        } else {
+            Issue.record("Erwartete .folder, bekam \(nodes[0])")
+        }
+    }
+
+    @Test("Mehrere '/' erzeugen nur eine Ordnerebene — der Rest bleibt Teil des Blattnamens")
+    func multipleSlashesOnlyOneFolderLevel() {
+        let nodes = BranchTree.build([makeBranch(name: "feature/foo/bar")], nameOf: \.name)
+        #expect(nodes.count == 1)
+        if case .folder(let name, let children) = nodes[0] {
+            #expect(name == "feature")
+            #expect(children.count == 1)
+            #expect(children[0].displayName == "foo/bar")
+        } else {
+            Issue.record("Erwartete .folder, bekam \(nodes[0])")
+        }
+    }
+
+    @Test("Mehrere Branches im selben Ordner werden gruppiert")
+    func multipleBranchesGroupIntoSameFolder() {
+        let nodes = BranchTree.build(
+            [makeBranch(name: "feature/a"), makeBranch(name: "feature/b")],
+            nameOf: \.name
+        )
+        #expect(nodes.count == 1)
+        if case .folder(let name, let children) = nodes[0] {
+            #expect(name == "feature")
+            #expect(children.count == 2)
+        } else {
+            Issue.record("Erwartete .folder, bekam \(nodes[0])")
+        }
+    }
+
+    @Test("Ordner und Top-Level-Blätter werden gemeinsam nach sortKey sortiert")
+    func foldersAndLeavesSortedTogether() {
+        let nodes = BranchTree.build(
+            [makeBranch(name: "main"), makeBranch(name: "feature/x"), makeBranch(name: "zulu")],
+            nameOf: \.name
+        )
+        #expect(nodes.map(\.sortKey) == ["feature", "main", "zulu"])
+    }
+
+    @Test("Sortierung ist lokalisiert case-insensitiv")
+    func sortIsCaseInsensitive() {
+        let nodes = BranchTree.build(
+            [makeBranch(name: "Zulu"), makeBranch(name: "apple")],
+            nameOf: \.name
+        )
+        #expect(nodes.map(\.sortKey) == ["apple", "Zulu"])
+    }
+
+    @Test("Leere Eingabe ergibt leeres Ergebnis")
+    func emptyInputYieldsEmptyResult() {
+        #expect(BranchTree.build([], nameOf: \.name).isEmpty)
+    }
+}
+
 // MARK: - DiffParser — Zeilennummern
 
 @Suite("DiffParser — Zeilennummern")
@@ -2736,6 +2825,45 @@ struct RepositoryViewModelUnitTests {
             name: "test",
             path: URL(fileURLWithPath: "/tmp/nonexistent-vm-\(UUID().uuidString)")
         ))
+    }
+
+    // MARK: Branch-Baum (abgeleitet aus `branches`)
+
+    @Test("branches-Zuweisung baut localBranchTree/remoteNames/remoteBranchTrees automatisch neu auf")
+    func branchesAssignmentRebuildsDerivedTrees() {
+        let vm = makeVM()
+        let local = Branch(
+            name: "main", shortName: "main", isCurrent: true, isRemote: false, remoteName: nil,
+            tipSha: "a", upstreamName: nil, ahead: nil, behind: nil
+        )
+        let feature = Branch(
+            name: "feature/x", shortName: "feature/x", isCurrent: false, isRemote: false, remoteName: nil,
+            tipSha: "b", upstreamName: nil, ahead: nil, behind: nil
+        )
+        let remote = Branch(
+            name: "origin/main", shortName: "main", isCurrent: false, isRemote: true, remoteName: "origin",
+            tipSha: "a", upstreamName: nil, ahead: nil, behind: nil
+        )
+
+        vm.branches = [local, feature, remote]
+
+        // "main"-Leaf + "feature"-Ordner
+        #expect(vm.localBranchTree.count == 2)
+        #expect(vm.remoteNames == ["origin"])
+        #expect(vm.remoteBranchTrees["origin"]?.count == 1)
+    }
+
+    @Test("branches = [] leert die abgeleiteten Bäume wieder")
+    func emptyBranchesClearsDerivedTrees() {
+        let vm = makeVM()
+        vm.branches = [Branch(
+            name: "main", shortName: "main", isCurrent: true, isRemote: false, remoteName: nil,
+            tipSha: "a", upstreamName: nil, ahead: nil, behind: nil
+        )]
+        vm.branches = []
+        #expect(vm.localBranchTree.isEmpty)
+        #expect(vm.remoteNames.isEmpty)
+        #expect(vm.remoteBranchTrees.isEmpty)
     }
 
     // MARK: Such-State

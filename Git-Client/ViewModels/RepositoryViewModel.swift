@@ -18,8 +18,17 @@ final class RepositoryViewModel {
 
     var commits: [Commit] = []
     var graphRows: [GraphRow] = []
-    var branches: [Branch] = []
+    var branches: [Branch] = [] {
+        didSet { rebuildBranchDerived() }
+    }
     var tags: [GitTag] = []
+
+    // Von `branches` abgeleitete, vorab gebaute Baum-Struktur für die Sidebar —
+    // wird nur bei einer Zuweisung an `branches` neu berechnet (siehe `didSet`
+    // oben), nicht bei jedem SwiftUI-Render.
+    private(set) var localBranchTree: [BranchTreeNode] = []
+    private(set) var remoteNames: [String] = []
+    private(set) var remoteBranchTrees: [String: [BranchTreeNode]] = [:]
     var isLoading = false
     var isLoadingMore = false   // Nachlade-Vorgang läuft
     var canLoadMore = true      // false sobald git log < pageSize zurückgibt
@@ -97,6 +106,18 @@ final class RepositoryViewModel {
         self.repository = repository
         self.service = GitService(repositoryPath: repository.path)
         self.settings = settings
+    }
+
+    private func rebuildBranchDerived() {
+        let local = branches.filter { !$0.isRemote }
+        localBranchTree = BranchTree.build(local, nameOf: \.name)
+
+        let remote = branches.filter { $0.isRemote }
+        let names = Array(Set(remote.compactMap(\.remoteName))).sorted()
+        remoteNames = names
+        remoteBranchTrees = Dictionary(uniqueKeysWithValues: names.map { name in
+            (name, BranchTree.build(remote.filter { $0.remoteName == name }, nameOf: \.shortName))
+        })
     }
 
     func load() async {

@@ -258,7 +258,12 @@ final class AppModel {
     // lokal konfigurierten Remote-Namen. Aktuell bewusst so gelassen (Stand 2026-09-15);
     // falls gewünscht: guard auf GitService.firstRemoteName() statt bookmark.remoteURL
     // umstellen, analog zum manuellen Fetch-Pfad.
-    private func pollRemotes(repos: [RepositoryBookmark]) async {
+    //
+    // Zugriffsebene bewusst nicht `private`: Tests rufen diese Methode direkt auf, um nicht
+    // auf den remotePollInterval-Timer (Minimum 60s) warten zu müssen — analog zum
+    // Testzugriffspunkt `init(store:)`. Kein neuer öffentlicher API-Vertrag, nur ein
+    // Testzugriffspunkt innerhalb des App-Targets.
+    func pollRemotes(repos: [RepositoryBookmark]) async {
         for repo in repos {
             guard !Task.isCancelled else { break }
             guard let service = monitoringServices[repo.id] else { continue }
@@ -266,6 +271,22 @@ final class AppModel {
 
             let password = KeychainStore.load(for: repo.id)
             do {
+                // Günstige Vorab-Prüfung: nur Server-Refs abfragen (ls-remote), kein
+                // Objekt-Download. Nur wenn sich dabei tatsächlich etwas geändert hat,
+                // folgt unten der teure echte Fetch.
+                guard let remoteName = try await service.remoteName() else { continue }
+                let localSig = await service.localRefSignature()
+                let heads = try await service.remoteHeads(remoteURL: remoteURL, username: repo.username, password: password)
+                let aheadBranches = RepoRefSnapshot.remoteAhead(localSignature: localSig, remoteHeads: heads, remoteName: remoteName)
+
+                var news = newCommitStatus[repo.id] ?? RepoNewCommits()
+                news.remoteAheadBranches = aheadBranches
+                newCommitStatus[repo.id] = news
+
+                guard aheadBranches > 0 else { continue }
+
+                // Es gibt tatsächlich Neuigkeiten — jetzt lohnt sich der echte Fetch, um
+                // die Objekte zu holen und Ahead/Behind exakt zu aktualisieren.
                 try await service.fetch(remoteURL: remoteURL, username: repo.username, password: password)
                 if let ab = try? await service.aheadBehind() {
                     var st = repoStatus[repo.id] ?? RepoStatus()
@@ -273,9 +294,6 @@ final class AppModel {
                     st.aheadCount = ab.ahead
                     st.behindCount = ab.behind
                     repoStatus[repo.id] = st
-                    var news = newCommitStatus[repo.id] ?? RepoNewCommits()
-                    news.remoteAheadBranches = ab.behind > 0 ? 1 : 0
-                    newCommitStatus[repo.id] = news
                 }
             } catch {
                 // Offline, fehlende Credentials etc. — still ignorieren

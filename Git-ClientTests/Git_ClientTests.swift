@@ -3714,6 +3714,90 @@ struct AppModelMonitoringTests {
 
         #expect(model.bookmarkNodes.count == 1)
     }
+
+    @Test("pollRemotes erkennt keine Neuigkeiten, wenn der Server unverändert ist")
+    func pollRemotesNoNewsWhenServerUnchanged() async throws {
+        let base = FileManager.default.temporaryDirectory
+        let bareURL = base.appendingPathComponent("bare-\(UUID().uuidString).git", isDirectory: true)
+        try sh("git", "init", "--bare", bareURL.path)
+        let localURL = base.appendingPathComponent("local-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: bareURL)
+            try? FileManager.default.removeItem(at: localURL)
+        }
+
+        let suiteName = "Git-Client.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        let model = makeModel(settings: settings)
+        try await model.cloneRepository(remoteURL: bareURL.path, to: localURL, name: "Test", username: nil, password: nil)
+
+        try sh("git", "-C", localURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", localURL.path, "config", "user.name", "T")
+        let f = localURL.appendingPathComponent("init.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Init")
+        try sh("git", "-C", localURL.path, "push", "-u", "origin", "HEAD")
+
+        let bookmark = try #require(model.bookmarkNodes.allRepositories().first)
+
+        await model.pollRemotes(repos: [bookmark])
+
+        #expect((model.newCommitStatus[bookmark.id]?.remoteAheadBranches ?? 0) == 0)
+    }
+
+    @Test("pollRemotes erkennt Server-Neuigkeiten über ls-remote und holt sie automatisch nach")
+    func pollRemotesFetchesWhenServerHasNews() async throws {
+        let base = FileManager.default.temporaryDirectory
+        let bareURL = base.appendingPathComponent("bare-\(UUID().uuidString).git", isDirectory: true)
+        try sh("git", "init", "--bare", bareURL.path)
+        let localURL = base.appendingPathComponent("local-\(UUID().uuidString)", isDirectory: true)
+        let otherURL = base.appendingPathComponent("other-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: bareURL)
+            try? FileManager.default.removeItem(at: localURL)
+            try? FileManager.default.removeItem(at: otherURL)
+        }
+
+        let suiteName = "Git-Client.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+
+        let model = makeModel(settings: settings)
+        try await model.cloneRepository(remoteURL: bareURL.path, to: localURL, name: "Test", username: nil, password: nil)
+
+        try sh("git", "-C", localURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", localURL.path, "config", "user.name", "T")
+        let f = localURL.appendingPathComponent("init.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Init")
+        try sh("git", "-C", localURL.path, "push", "-u", "origin", "HEAD")
+
+        // Zweiter, unabhängiger Klon simuliert einen fremden Push, von dem "localURL"
+        // noch nichts weiß (kein Fetch dazwischen).
+        try sh("git", "clone", bareURL.path, otherURL.path)
+        try sh("git", "-C", otherURL.path, "config", "user.email", "o@o.com")
+        try sh("git", "-C", otherURL.path, "config", "user.name", "O")
+        let g = otherURL.appendingPathComponent("other.txt")
+        try "y".write(to: g, atomically: true, encoding: .utf8)
+        try sh("git", "-C", otherURL.path, "add", ".")
+        try sh("git", "-C", otherURL.path, "commit", "-m", "Externer Commit")
+        try sh("git", "-C", otherURL.path, "push")
+
+        let bookmark = try #require(model.bookmarkNodes.allRepositories().first)
+
+        await model.pollRemotes(repos: [bookmark])
+
+        #expect((model.newCommitStatus[bookmark.id]?.remoteAheadBranches ?? 0) == 1)
+        // Da Neuigkeiten erkannt wurden, holt pollRemotes automatisch den echten Fetch
+        // nach — die lokalen Ahead/Behind-Zahlen sind danach aktuell.
+        #expect(model.repoStatus[bookmark.id]?.behindCount == 1)
+    }
 }
 
 // MARK: - GitService — Statistik-Abfragen

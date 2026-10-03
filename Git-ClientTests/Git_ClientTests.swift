@@ -1355,6 +1355,109 @@ struct RepositoryViewModelCheckoutTests {
     }
 }
 
+// MARK: - RepositoryViewModel — Hard-Reset-Fallback bei pull()
+
+@Suite("RepositoryViewModel — Hard-Reset-Fallback")
+@MainActor
+struct RepositoryViewModelHardResetTests {
+
+    let bareURL: URL
+    let localURL: URL
+    let bookmark: RepositoryBookmark
+
+    init() throws {
+        let base = FileManager.default.temporaryDirectory
+        bareURL = base.appendingPathComponent("bare-\(UUID().uuidString).git", isDirectory: true)
+        localURL = base.appendingPathComponent("local-\(UUID().uuidString)", isDirectory: true)
+
+        try sh("git", "init", "--bare", bareURL.path)
+        try sh("git", "clone", bareURL.path, localURL.path)
+        try sh("git", "-C", localURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", localURL.path, "config", "user.name", "T")
+
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "server-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Init")
+        try sh("git", "-C", localURL.path, "push", "-u", "origin", "HEAD")
+
+        bookmark = RepositoryBookmark(name: "Test", path: localURL)
+    }
+
+    /// Simuliert einen fremden Push auf dieselbe Datei, von dem `localURL` noch nichts
+    /// weiß — danach kollidiert ein lokaler, unkommittierter Stand mit dem Server.
+    private func pushConflictingServerChange() throws {
+        let otherURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("other-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: otherURL) }
+        try sh("git", "clone", bareURL.path, otherURL.path)
+        try sh("git", "-C", otherURL.path, "config", "user.email", "o@o.com")
+        try sh("git", "-C", otherURL.path, "config", "user.name", "O")
+        let f = otherURL.appendingPathComponent("shared.txt")
+        try "server-content-updated".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", otherURL.path, "commit", "-am", "Server-Update")
+        try sh("git", "-C", otherURL.path, "push")
+    }
+
+    @Test("pull() löst bei fehlgeschlagenem Fast-Forward den Warndialog aus, statt nur einen Fehler zu zeigen")
+    func pullSetsPendingHardResetOnFastForwardFailure() async throws {
+        try pushConflictingServerChange()
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        try await GitService(repositoryPath: localURL).fetch(remoteURL: nil, username: nil, password: nil)
+
+        await vm.pull()
+
+        #expect(vm.pendingHardReset)
+        #expect(vm.remoteStatusMessage == nil)
+        // Lokaler Stand bleibt bis zur Bestätigung unverändert.
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "local-uncommitted")
+    }
+
+    @Test("confirmHardResetToUpstream verwirft den lokalen Stand und synchronisiert hart")
+    func confirmHardResetDiscardsAndSyncs() async throws {
+        try pushConflictingServerChange()
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        try await GitService(repositoryPath: localURL).fetch(remoteURL: nil, username: nil, password: nil)
+        await vm.pull()
+        #expect(vm.pendingHardReset)
+
+        await vm.confirmHardResetToUpstream()
+
+        #expect(!vm.pendingHardReset)
+        #expect(vm.remoteStatusMessage == nil)
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "server-content-updated")
+    }
+
+    @Test("cancelPendingHardReset lässt den lokalen Stand unverändert")
+    func cancelPendingHardResetLeavesLocalStateUnchanged() async throws {
+        try pushConflictingServerChange()
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        try await GitService(repositoryPath: localURL).fetch(remoteURL: nil, username: nil, password: nil)
+        await vm.pull()
+        #expect(vm.pendingHardReset)
+
+        vm.cancelPendingHardReset()
+
+        #expect(!vm.pendingHardReset)
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "local-uncommitted")
+    }
+}
+
 // MARK: - KeychainStore
 
 @Suite("KeychainStore")
@@ -1586,6 +1689,95 @@ struct GitServiceAheadBehindTests {
         let svc = GitService(repositoryPath: noUpstreamURL)
         let counts = try await svc.aheadBehind()
         #expect(counts == nil)
+    }
+}
+
+// MARK: - GitService — hardResetToUpstream (Integration)
+
+@Suite("GitService — hardResetToUpstream")
+struct GitServiceHardResetTests {
+
+    let bareURL: URL
+    let localURL: URL
+
+    init() throws {
+        let base = FileManager.default.temporaryDirectory
+        bareURL = base.appendingPathComponent("bare-\(UUID().uuidString).git", isDirectory: true)
+        localURL = base.appendingPathComponent("local-\(UUID().uuidString)", isDirectory: true)
+
+        try sh("git", "init", "--bare", bareURL.path)
+        try sh("git", "clone", bareURL.path, localURL.path)
+        try sh("git", "-C", localURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", localURL.path, "config", "user.name", "T")
+
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "server-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Init")
+        try sh("git", "-C", localURL.path, "push", "-u", "origin", "HEAD")
+    }
+
+    @Test("hardResetToUpstream verwirft unkommittierte Änderungen")
+    func discardsUncommittedChanges() async throws {
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let svc = GitService(repositoryPath: localURL)
+        try await svc.hardResetToUpstream()
+
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "server-content")
+        #expect(await svc.hasUncommittedChanges() == false)
+    }
+
+    @Test("hardResetToUpstream verwirft lokale Commits, die nicht auf dem Server sind")
+    func discardsLocalOnlyCommits() async throws {
+        let f = localURL.appendingPathComponent("local-only.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Lokaler Commit, nie gepusht")
+
+        let svc = GitService(repositoryPath: localURL)
+        let before = try await svc.aheadBehind()
+        #expect(before?.ahead == 1)
+
+        try await svc.hardResetToUpstream()
+
+        let after = try await svc.aheadBehind()
+        #expect(after?.ahead == 0)
+        #expect(after?.behind == 0)
+        #expect(!FileManager.default.fileExists(atPath: f.path))
+    }
+
+    @Test("hardResetToUpstream nach fehlgeschlagenem Fast-Forward führt zum selben Stand wie der Server")
+    func matchesServerAfterFailedFastForward() async throws {
+        // Zweiter, unabhängiger Klon simuliert einen fremden Push auf dieselbe Datei.
+        let otherURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("other-\(UUID().uuidString)", isDirectory: true)
+        try sh("git", "clone", bareURL.path, otherURL.path)
+        try sh("git", "-C", otherURL.path, "config", "user.email", "o@o.com")
+        try sh("git", "-C", otherURL.path, "config", "user.name", "O")
+        let otherFile = otherURL.appendingPathComponent("shared.txt")
+        try "server-content-updated".write(to: otherFile, atomically: true, encoding: .utf8)
+        try sh("git", "-C", otherURL.path, "commit", "-am", "Server-Update")
+        try sh("git", "-C", otherURL.path, "push")
+        defer { try? FileManager.default.removeItem(at: otherURL) }
+
+        // Lokal kollidierende unkommittierte Änderung an derselben Datei.
+        let f = localURL.appendingPathComponent("shared.txt")
+        try "local-uncommitted".write(to: f, atomically: true, encoding: .utf8)
+
+        let svc = GitService(repositoryPath: localURL)
+        try await svc.fetch(remoteURL: nil, username: nil, password: nil)
+
+        await #expect(throws: (any Error).self) {
+            try await svc.fastForward()
+        }
+
+        try await svc.hardResetToUpstream()
+        let content = try String(contentsOf: f, encoding: .utf8)
+        #expect(content == "server-content-updated")
+        #expect(await svc.hasUncommittedChanges() == false)
     }
 }
 
@@ -3976,6 +4168,40 @@ struct AppModelMonitoringTests {
         #expect(model.repoStatus[repoID]?.currentBranch == "main")
         #expect(model.repoStatus[repoID]?.pathExists == true)
         #expect(model.repoStatus[repoID]?.hasUncommittedChanges == false)
+    }
+
+    @Test("refreshLocalStatus überspringt das Update, während im geöffneten Repository eine schreibende Operation läuft")
+    func refreshLocalStatusSkipsWhileWriteOperationInFlightForOpenedRepo() async throws {
+        // Reproduziert die reale Kollision: ein großer Hard-Reset/Checkout hält
+        // .git/index.lock über seine gesamte Laufzeit, FSEvent-Bursts während dieser
+        // Zeit dürfen refreshLocalStatus deshalb nicht erneut anstoßen (siehe
+        // RepositoryViewModel.isPerformingGitWriteOperation).
+        let repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("model-writeguard-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "T")
+        let f = repoURL.appendingPathComponent("f.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "init")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let model = makeModel()
+        let bookmark = RepositoryBookmark(name: "Repo", path: repoURL)
+        model.openedRepository = bookmark
+        let vm = RepositoryViewModel(repository: bookmark)
+        model.repositoryViewModel = vm
+        let service = GitService(repositoryPath: repoURL)
+
+        vm.isPulling = true
+        await model.refreshLocalStatus(repoID: bookmark.id, service: service)
+        #expect(model.repoStatus[bookmark.id] == nil)
+
+        vm.isPulling = false
+        await model.refreshLocalStatus(repoID: bookmark.id, service: service)
+        #expect(model.repoStatus[bookmark.id]?.currentBranch == "main")
     }
 
     @Test("pollRemotes erkennt keine Neuigkeiten, wenn der Server unverändert ist")

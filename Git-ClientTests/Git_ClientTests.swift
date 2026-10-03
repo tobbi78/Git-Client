@@ -769,6 +769,34 @@ struct GitRunnerConcurrencyTests {
     }
 }
 
+@Suite("GitRunner — PATH-Ergänzung für GUI-Start")
+struct GitRunnerAugmentedPathTests {
+
+    @Test("Fehlende Homebrew-/Standardpfade werden vorangestellt")
+    func addsMissingPaths() {
+        let result = GitRunner.augmentedPath(current: "/usr/bin:/bin")
+        #expect(result == "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin")
+    }
+
+    @Test("Bereits vorhandene Pfade werden nicht doppelt hinzugefügt")
+    func doesNotDuplicateExistingPaths() {
+        let result = GitRunner.augmentedPath(current: "/opt/homebrew/bin:/usr/bin:/bin")
+        #expect(result == "/opt/homebrew/sbin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin")
+    }
+
+    @Test("Sind alle Pfade schon vorhanden, bleibt der String unverändert")
+    func unchangedWhenAllPathsPresent() {
+        let current = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin"
+        #expect(GitRunner.augmentedPath(current: current) == current)
+    }
+
+    @Test("nil ergibt den Standard-Fallback plus Homebrew-Pfade")
+    func nilYieldsFallbackPlusExtras() {
+        let result = GitRunner.augmentedPath(current: nil)
+        #expect(result == "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+    }
+}
+
 // MARK: - GitService Integration
 
 private func sh(_ args: String...) throws {

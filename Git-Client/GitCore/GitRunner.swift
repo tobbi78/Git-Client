@@ -78,6 +78,14 @@ actor GitRunner {
                 // sinnvoll; ohne diesen Schutz würde ls-remote/fetch an einem Prompt hängen.
                 var env = ProcessInfo.processInfo.environment
                 env["GIT_TERMINAL_PROMPT"] = "0"
+                // Eine per Doppelklick/Dock gestartete GUI-App erbt NICHT die Shell-Profile
+                // (.zprofile/.zshrc) und damit auch nicht deren PATH-Ergänzungen — anders als
+                // ein aus dem Terminal gestartetes git. Befehle, die git über PATH aufgerufene
+                // externe Helper benötigen (z.B. `git-lfs filter-process` bei LFS-Repos),
+                // schlagen dadurch in der gebauten App fehl, obwohl sie im Terminal
+                // funktionieren (beobachtet: "git-lfs: command not found" trotz installiertem
+                // git-lfs). Gängige Installationsorte werden deshalb explizit ergänzt.
+                env["PATH"] = GitRunner.augmentedPath(current: env["PATH"])
                 process.environment = env
 
                 let stdoutPipe = Pipe()
@@ -133,6 +141,19 @@ actor GitRunner {
             throw GitError.nonZeroExit(code: result.exitCode, stderr: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return result.stdout
+    }
+
+    /// Ergänzt `current` um gängige Homebrew-/Standard-Installationsorte, falls sie
+    /// dort noch nicht enthalten sind. Eigene, pure Funktion statt Inline-Logik in
+    /// `run` — testbar ohne echten Prozess/Environment.
+    nonisolated static func augmentedPath(current: String?) -> String {
+        let fallback = "/usr/bin:/bin:/usr/sbin:/sbin"
+        let base = current ?? fallback
+        let existing = Set(base.split(separator: ":").map(String.init))
+        let extras = ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin"]
+            .filter { !existing.contains($0) }
+        guard !extras.isEmpty else { return base }
+        return (extras + [base]).joined(separator: ":")
     }
 }
 

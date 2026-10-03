@@ -1561,6 +1561,15 @@ struct GitServiceAheadBehindTests {
         #expect(counts?.behind == 0)
     }
 
+    @Test("localStatusSnapshot liefert Upstream mit ahead=1, behind=0")
+    func localStatusSnapshotAheadOne() async throws {
+        let svc = GitService(repositoryPath: localURL)
+        let snapshot = await svc.localStatusSnapshot()
+        #expect(snapshot?.hasUpstream == true)
+        #expect(snapshot?.aheadCount == 1)
+        #expect(snapshot?.behindCount == 0)
+    }
+
     @Test("aheadBehind gibt nil für Repo ohne Upstream zurück")
     func aheadBehindNoUpstreamReturnsNil() async throws {
         let noUpstreamURL = FileManager.default.temporaryDirectory
@@ -3062,6 +3071,70 @@ struct RepoStatusTests {
         #expect(RepoStatus.parsePorcelainDirty("?? NewFile.swift"))
     }
 
+    // parsePorcelainV2Branch
+
+    @Test("v2: saubere Arbeitskopie ohne Upstream")
+    func v2CleanNoUpstream() {
+        let output = "# branch.oid abc123\n# branch.head main"
+        let st = RepoStatus.parsePorcelainV2Branch(output)
+        #expect(st.currentBranch == "main")
+        #expect(!st.hasUpstream)
+        #expect(st.aheadCount == 0)
+        #expect(st.behindCount == 0)
+        #expect(!st.hasUncommittedChanges)
+    }
+
+    @Test("v2: detached HEAD ergibt currentBranch nil")
+    func v2DetachedHead() {
+        let output = "# branch.oid abc123\n# branch.head (detached)"
+        let st = RepoStatus.parsePorcelainV2Branch(output)
+        #expect(st.currentBranch == nil)
+    }
+
+    @Test("v2: Upstream mit ahead/behind")
+    func v2UpstreamAheadBehind() {
+        let output = """
+        # branch.oid abc123
+        # branch.head main
+        # branch.upstream origin/main
+        # branch.ab +2 -3
+        """
+        let st = RepoStatus.parsePorcelainV2Branch(output)
+        #expect(st.hasUpstream)
+        #expect(st.aheadCount == 2)
+        #expect(st.behindCount == 3)
+    }
+
+    @Test("v2: Upstream ohne Abweichung (+0 -0)")
+    func v2UpstreamNoDivergence() {
+        let output = """
+        # branch.oid abc123
+        # branch.head main
+        # branch.upstream origin/main
+        # branch.ab +0 -0
+        """
+        let st = RepoStatus.parsePorcelainV2Branch(output)
+        #expect(st.hasUpstream)
+        #expect(st.aheadCount == 0)
+        #expect(st.behindCount == 0)
+    }
+
+    @Test("v2: geänderte getrackte Datei → hasUncommittedChanges")
+    func v2TrackedChangeIsDirty() {
+        let output = """
+        # branch.oid abc123
+        # branch.head main
+        1 .M N... 100644 100644 100644 aaa bbb f.txt
+        """
+        #expect(RepoStatus.parsePorcelainV2Branch(output).hasUncommittedChanges)
+    }
+
+    @Test("v2: unversionierte Datei → hasUncommittedChanges")
+    func v2UntrackedFileIsDirty() {
+        let output = "# branch.oid abc123\n# branch.head main\n? g.txt"
+        #expect(RepoStatus.parsePorcelainV2Branch(output).hasUncommittedChanges)
+    }
+
     // relativeLabel
 
     @Test("Liefert nicht-leeren String für vergangenes Datum")
@@ -3324,6 +3397,24 @@ struct GitServiceLocalStatusTests {
         if let d = date {
             #expect(abs(d.timeIntervalSinceNow) < 60)
         }
+    }
+
+    @Test("localStatusSnapshot liefert Branch ohne Upstream, sauber")
+    func localStatusSnapshotCleanNoUpstream() async {
+        let svc = GitService(repositoryPath: repoURL)
+        let snapshot = await svc.localStatusSnapshot()
+        #expect(snapshot?.currentBranch == "main")
+        #expect(snapshot?.hasUpstream == false)
+        #expect(snapshot?.hasUncommittedChanges == false)
+    }
+
+    @Test("localStatusSnapshot erkennt unkommittierte Änderungen")
+    func localStatusSnapshotDirty() async throws {
+        let f = repoURL.appendingPathComponent("modified.txt")
+        try "changed".write(to: f, atomically: true, encoding: .utf8)
+        let svc = GitService(repositoryPath: repoURL)
+        let snapshot = await svc.localStatusSnapshot()
+        #expect(snapshot?.hasUncommittedChanges == true)
     }
 }
 
@@ -3850,6 +3941,41 @@ struct AppModelMonitoringTests {
             try await Task.sleep(for: .milliseconds(50))
         }
         #expect(model.repoStatus[bookmark.id]?.pathExists == true)
+    }
+
+    @Test("refreshLocalStatus toleriert überlappende Aufrufe für dasselbe Repo ohne Absturz oder Datenriss")
+    func refreshLocalStatusHandlesConcurrentCallsForSameRepo() async throws {
+        // Beweist nicht direkt, dass die Re-Entrancy-Sperre im Einzelfall greift (dafür
+        // bräuchte es Instrumentierung des GitService-Aufrufs) — aber genau dieses
+        // Szenario (mehrere gleichzeitige refreshLocalStatus-Aufrufe für dasselbe Repo,
+        // ausgelöst durch FSEvent-Bursts) hat vor dem Fix reale index.lock-Kollisionen
+        // erzeugt. Hier wird geprüft, dass das Ergebnis danach trotzdem vollständig und
+        // korrekt ist.
+        let repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("model-concurrent-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "T")
+        let f = repoURL.appendingPathComponent("f.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "init")
+        defer { try? FileManager.default.removeItem(at: repoURL) }
+
+        let model = makeModel()
+        let repoID = UUID()
+        let service = GitService(repositoryPath: repoURL)
+
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<5 {
+                group.addTask { await model.refreshLocalStatus(repoID: repoID, service: service) }
+            }
+        }
+
+        #expect(model.repoStatus[repoID]?.currentBranch == "main")
+        #expect(model.repoStatus[repoID]?.pathExists == true)
+        #expect(model.repoStatus[repoID]?.hasUncommittedChanges == false)
     }
 
     @Test("pollRemotes erkennt keine Neuigkeiten, wenn der Server unverändert ist")

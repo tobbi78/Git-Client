@@ -35,6 +35,15 @@ final class AppModel {
     /// Mappt Repository-ID → GitService für den Monitoring-Pfad.
     private var monitoringServices: [UUID: GitService] = [:]
 
+    /// Repo-IDs, für die `refreshLocalStatus` aktuell läuft — verhindert, dass ein
+    /// FSEvent, das durch den eigenen `git status`-Aufruf (Index-Refresh) ausgelöst
+    /// wird, eine zweite, überlappende Status-Abfrage für dasselbe Repo startet.
+    /// Ohne diese Sperre können zwei gleichzeitige `git status`-Prozesse auf
+    /// `.git/index.lock` kollidieren — beobachtet bei sehr großen Repos, bei denen
+    /// der Status-Scan lange genug dauert, dass sich aufeinanderfolgende
+    /// FSEvent-Bursts überlappen.
+    private var refreshInFlight: Set<UUID> = []
+
     private let watcher = GitFolderWatcher()
     private var remotePollTask: Task<Void, Never>?
 
@@ -236,19 +245,24 @@ final class AppModel {
         }
     }
 
-    private func refreshLocalStatus(repoID: UUID, service: GitService) async {
-        var st = repoStatus[repoID] ?? RepoStatus()
+    /// Zugriffsebene bewusst nicht `private`: Tests rufen diese Methode direkt auf, um
+    /// echte Nebenläufigkeit (zwei gleichzeitige Aufrufe für dasselbe Repo) ohne Warten
+    /// auf einen echten FSEvent-Burst zu erzeugen — analog zum Testzugriffspunkt
+    /// `pollRemotes`.
+    func refreshLocalStatus(repoID: UUID, service: GitService) async {
+        // Verhindert überlappende `git status`-Aufrufe für dasselbe Repo (siehe
+        // Kommentar an `refreshInFlight`) — ein bereits laufender Refresh deckt den
+        // aktuellen Stand ohnehin ab, ein zweiter gleichzeitiger Aufruf wird verworfen.
+        guard !refreshInFlight.contains(repoID) else { return }
+        refreshInFlight.insert(repoID)
+        defer { refreshInFlight.remove(repoID) }
+
+        // Branch, Ahead/Behind und unkommittierte Änderungen in einem Subprozess statt
+        // drei getrennten (siehe GitService.localStatusSnapshot) — bei Fehler bleibt
+        // der zuletzt bekannte Stand erhalten statt eines teilweise geleerten Status.
+        var st = await service.localStatusSnapshot() ?? (repoStatus[repoID] ?? RepoStatus())
         st.pathExists = FileManager.default.fileExists(atPath: service.repositoryPath.path)
-        st.currentBranch = await service.currentBranch()
-        st.hasUncommittedChanges = await service.hasUncommittedChanges()
         st.lastCommitDate = await service.lastCommitDate()
-        if let ab = try? await service.aheadBehind() {
-            st.hasUpstream = true
-            st.aheadCount = ab.ahead
-            st.behindCount = ab.behind
-        } else {
-            st.hasUpstream = false
-        }
         repoStatus[repoID] = st
     }
 

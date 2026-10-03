@@ -36,6 +36,33 @@ nonisolated struct RepoStatus: Equatable, Sendable {
         !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Parst `git status --porcelain=v2 --branch` in einem Durchlauf statt drei
+    /// separater Aufrufe (currentBranch/hasUncommittedChanges/aheadBehind) — reduziert
+    /// die Anzahl der Git-Subprozesse pro Status-Aktualisierung. `lastCommitDate` und
+    /// `pathExists` sind in dieser Ausgabe nicht enthalten und bleiben beim Default;
+    /// die aufrufende Seite befüllt sie separat.
+    static func parsePorcelainV2Branch(_ output: String) -> RepoStatus {
+        var status = RepoStatus()
+        for line in output.components(separatedBy: "\n") {
+            if line.hasPrefix("# branch.head ") {
+                let head = String(line.dropFirst("# branch.head ".count))
+                status.currentBranch = (head == "(detached)") ? nil : head
+            } else if line.hasPrefix("# branch.ab ") {
+                status.hasUpstream = true
+                for part in line.dropFirst("# branch.ab ".count).components(separatedBy: " ") {
+                    if part.hasPrefix("+"), let n = Int(part.dropFirst()) {
+                        status.aheadCount = n
+                    } else if part.hasPrefix("-"), let n = Int(part.dropFirst()) {
+                        status.behindCount = n
+                    }
+                }
+            } else if !line.isEmpty, !line.hasPrefix("#") {
+                status.hasUncommittedChanges = true
+            }
+        }
+        return status
+    }
+
     /// Gecachter Formatter statt einer Neuallokation (inkl. Locale-Aufbau) pro Aufruf —
     /// gleiches Muster wie GitLogParser.dateFormatter.
     nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {

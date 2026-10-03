@@ -372,4 +372,17 @@ actor GitService {
     func lastCommitDate() async -> Date? {
         await loadSingleCommit(sha: "HEAD")?.date
     }
+
+    /// Liefert Branch, Upstream-Ahead/Behind und ob es unkommittierte Änderungen gibt
+    /// in einem Subprozess (`git status --porcelain=v2 --branch`) statt den drei
+    /// separaten Aufrufen `currentBranch`/`hasUncommittedChanges`/`aheadBehind`.
+    /// Wird vom Auto-Refresh-Monitoring verwendet, wo FSEvent-Bursts sonst mehrere
+    /// git-Subprozesse pro Repo pro Event ausgelöst haben. `nil` bei Fehler.
+    func localStatusSnapshot() async -> RepoStatus? {
+        guard let output = try? await runner.runOrThrow(
+            ["status", "--porcelain=v2", "--branch"],
+            workingDirectory: repositoryPath
+        ) else { return nil }
+        return RepoStatus.parsePorcelainV2Branch(output)
+    }
 }

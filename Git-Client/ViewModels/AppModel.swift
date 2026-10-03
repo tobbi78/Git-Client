@@ -254,6 +254,17 @@ final class AppModel {
         // Kommentar an `refreshInFlight`) — ein bereits laufender Refresh deckt den
         // aktuellen Stand ohnehin ab, ein zweiter gleichzeitiger Aufruf wird verworfen.
         guard !refreshInFlight.contains(repoID) else { return }
+
+        // Verhindert eine andere Art von Kollision: Pull/Hard-Reset/Checkout halten
+        // `.git/index.lock` über ihre gesamte Laufzeit (bei großen Resets mehrere
+        // Sekunden). Die dabei entstehenden FSEvent-Bursts würden ohne diesen Guard
+        // wiederholt einen `git status`-Aufruf anstoßen, der auf das noch gehaltene
+        // Lock trifft und fehlschlägt. Sobald die Operation fertig ist, greift der
+        // nächste (durch denselben Burst bereits angestoßene) Refresh wie gewohnt.
+        if repoID == openedRepository?.id, repositoryViewModel?.isPerformingGitWriteOperation == true {
+            return
+        }
+
         refreshInFlight.insert(repoID)
         defer { refreshInFlight.remove(repoID) }
 

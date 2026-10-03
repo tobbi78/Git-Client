@@ -47,11 +47,25 @@ final class RepositoryViewModel {
     var isFetching = false
     var isPulling = false
     var remoteStatusMessage: String? = nil
+    /// true → Warndialog "lokalen Stand verwerfen und hart synchronisieren?" anzeigen.
+    /// Wird gesetzt, wenn der Fast-Forward in `pull()` fehlschlägt (divergierte
+    /// Historie oder lokale Änderungen) — abgestimmte Schreib-Policy-Ausnahme, siehe
+    /// BACKLOG #10.
+    var pendingHardReset = false
 
     // MARK: - Branch-Checkout
     var isCheckingOutBranch = false
     var pendingCheckoutBranch: Branch? = nil   // != nil → Warndialog anzeigen
     var checkoutErrorMessage: String? = nil
+
+    /// true, während ein Git-Befehl läuft, der `.git/index.lock` über die
+    /// gesamte Laufzeit hält (Fetch/Pull/Hard-Reset/Checkout). AppModel prüft
+    /// dies, um den FSEvent-getriebenen `refreshLocalStatus`-Aufruf (git status)
+    /// für dasselbe, gerade geöffnete Repository zu überspringen — sonst
+    /// kollidiert er bei großen Resets/Checkouts mit dem bereits bestehenden Lock.
+    var isPerformingGitWriteOperation: Bool {
+        isFetching || isPulling || isCheckingOutBranch
+    }
 
     // MARK: - Suche / Filter
 
@@ -223,7 +237,11 @@ final class RepositoryViewModel {
         isFetching = false
     }
 
-    /// Übernimmt die Remote-Commits per Fast-Forward in den aktuellen Branch.
+    /// Übernimmt die Remote-Commits per Fast-Forward in den aktuellen Branch. Schlägt
+    /// das fehl (divergierte Historie oder lokale Änderungen, die überschrieben würden),
+    /// wird statt eines Fehlers ein Warndialog ausgelöst (`pendingHardReset`) — Tobias
+    /// hat festgelegt, dass "Aktualisieren" lokal immer auf den Remote-Stand bringen
+    /// soll, siehe BACKLOG #10 und die Schreib-Policy-Notiz dazu.
     func pull() async {
         guard !isFetching, !isPulling else { return }
         isPulling = true
@@ -232,9 +250,27 @@ final class RepositoryViewModel {
             try await service.fastForward()
             await load()
         } catch {
+            pendingHardReset = true
+        }
+        isPulling = false
+    }
+
+    /// Vom Warndialog: lokalen Stand verwerfen und hart auf den Upstream zurücksetzen.
+    func confirmHardResetToUpstream() async {
+        pendingHardReset = false
+        isPulling = true
+        remoteStatusMessage = nil
+        do {
+            try await service.hardResetToUpstream()
+            await load()
+        } catch {
             remoteStatusMessage = error.localizedDescription
         }
         isPulling = false
+    }
+
+    func cancelPendingHardReset() {
+        pendingHardReset = false
     }
 
     // MARK: - Branch-Checkout

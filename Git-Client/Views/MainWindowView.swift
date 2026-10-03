@@ -148,6 +148,23 @@ struct MainWindowView: View {
         } message: {
             Text(vm?.checkoutErrorMessage ?? "")
         }
+        .confirmationDialog(
+            "Fast-Forward nicht möglich",
+            isPresented: Binding(
+                get: { vm?.pendingHardReset ?? false },
+                set: { if !$0 { vm?.cancelPendingHardReset() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Lokalen Stand verwerfen und synchronisieren", role: .destructive) {
+                Task { await vm?.confirmHardResetToUpstream() }
+            }
+            Button("Abbrechen", role: .cancel) {
+                vm?.cancelPendingHardReset()
+            }
+        } message: {
+            Text("Lokale Commits oder Änderungen weichen vom Server ab. Beim Fortfahren wird der lokale Stand verworfen und durch den Server-Stand ersetzt.")
+        }
     }
 
     @ViewBuilder
@@ -333,7 +350,7 @@ struct MainWindowView: View {
                 Label("Aktualisieren", systemImage: "arrow.triangle.pull")
             }
             .disabled(!vm.hasUpstream || vm.behindCount == 0 || vm.isFetching || vm.isPulling || vm.isLoading)
-            .help("Übernimmt die Server-Commits per Fast-Forward (git merge --ff-only)")
+            .help("Übernimmt die Server-Commits per Fast-Forward; bei lokalen Abweichungen wird nach Bestätigung hart auf den Server-Stand zurückgesetzt")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

@@ -171,6 +171,19 @@ actor GitService {
         )
     }
 
+    /// Setzt den aktuellen Branch hart auf den Stand des Upstream-Branches zurück —
+    /// verwirft dabei jede lokale Abweichung (unkommittete Änderungen UND lokale
+    /// Commits, die nicht auf dem Server sind). Bewusste, mit Tobias abgestimmte
+    /// Ausnahme von der sonst rein lesenden Policy der App: wird nur als Fallback
+    /// verwendet, wenn `fastForward()` fehlgeschlagen ist, und erst nach expliziter
+    /// Nutzerbestätigung (siehe RepositoryViewModel.confirmHardResetToUpstream).
+    func hardResetToUpstream() async throws {
+        try await runner.runOrThrow(
+            ["reset", "--hard", "@{upstream}"],
+            workingDirectory: repositoryPath
+        )
+    }
+
     /// Wechselt auf den lokalen Branch `name`. Mit `force: true` werden dabei
     /// unkommittete Änderungen verworfen (git checkout --force) — wird nur nach
     /// expliziter Nutzerbestätigung verwendet.

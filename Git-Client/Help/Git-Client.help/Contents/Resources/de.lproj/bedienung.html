@@ -27,6 +27,7 @@
         <li><a href="#graph">Commit-History &amp; Graph lesen</a></li>
         <li><a href="#suche">Commits durchsuchen &amp; filtern</a></li>
         <li><a href="#navigation">Branches und Tags</a></li>
+        <li><a href="#sync">Mit dem Server synchronisieren</a></li>
         <li><a href="#diff">Diff ansehen</a></li>
         <li><a href="#blame">Blame-Ansicht</a></li>
         <li><a href="#statistiken">Statistiken</a></li>
@@ -280,6 +281,45 @@
     Nutze den Klick auf Branches und Tags, um schnell zwischen verschiedenen
     Entwicklungsständen zu navigieren, ohne scrollen zu müssen.
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="sync">Mit dem Server synchronisieren</h2>
+
+<p>
+    Oberhalb der Commit-Liste zeigt die Sync-Leiste den Stand gegenüber dem
+    Server und bietet zwei Aktionen an.
+</p>
+
+<ul>
+    <li><strong>„Vom Server prüfen"</strong> — führt <code>git fetch</code> aus und
+        aktualisiert damit nur den bekannten Server-Stand (Ahead/Behind-Zahlen,
+        Remote-Branches). Die lokalen Dateien bleiben unverändert.</li>
+    <li><strong>„Aktualisieren"</strong> — übernimmt neue Server-Commits per
+        Fast-Forward (<code>git merge --ff-only</code>). Das ist unkritisch,
+        solange keine lokalen Commits oder Änderungen vom Server abweichen.</li>
+</ul>
+
+<p>
+    Schlägt der Fast-Forward fehl — z.B. weil es lokale, noch nicht gepushte
+    Commits gibt oder weil unkommittierte Änderungen mit dem Server-Stand
+    kollidieren — erscheint ein Warndialog:
+</p>
+
+<div class="note">
+    <strong>„Fast-Forward nicht möglich"</strong><br>
+    Lokale Commits oder Änderungen weichen vom Server ab. Bestätigst du mit
+    <strong>„Lokalen Stand verwerfen und synchronisieren"</strong>, wird der lokale
+    Stand hart auf den Server-Stand zurückgesetzt (<code>git reset --hard</code>) —
+    sowohl unkommittierte Änderungen als auch lokale, nicht gepushte Commits gehen
+    dabei verloren. Mit <strong>„Abbrechen"</strong> bleibt alles unverändert.
+</div>
+
+<p>
+    Git-Client ist als reiner Lese-/Betrachtungs-Client gedacht — dieser Hard-Reset
+    ist die einzige bewusste Ausnahme: „Aktualisieren" soll immer zuverlässig den
+    aktuellen Server-Stand herstellen, ohne dass du Konflikte manuell in einer
+    Shell auflösen musst.
+</p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="diff">Diff ansehen</h2>

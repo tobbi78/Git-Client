@@ -21,6 +21,7 @@
 <nav class="page-toc">
     <p>Inhalt</p>
     <ol>
+        <li><a href="#v1_5">Version 1.5</a></li>
         <li><a href="#v1_4">Version 1.4</a></li>
         <li><a href="#v1_3">Version 1.3</a></li>
         <li><a href="#v1_2">Version 1.2</a></li>
@@ -28,6 +29,44 @@
         <li><a href="#v1_0">Version 1.0</a></li>
     </ol>
 </nav>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="v1_5">Version 1.5</h2>
+
+<h3>Neu: Branch wechseln</h3>
+<p>
+    Ein lokaler, nicht aktuell ausgecheckter Branch lässt sich per Rechtsklick in der
+    Seitenleiste direkt wechseln (<strong>„Zu Branch wechseln"</strong>). Gibt es
+    unkommittierte Änderungen, zeigt ein Warndialog, dass sie beim Wechsel verworfen
+    werden — erst nach Bestätigung wird tatsächlich gewechselt.
+</p>
+
+<h3>Neu: "Im Terminal öffnen"</h3>
+<p>
+    Ein Repository lässt sich jetzt per Kontextmenü (Bookmark-Browser) oder
+    Toolbar-Button (geöffnetes Repository) direkt in der Terminal-App öffnen.
+</p>
+
+<h3>Neu: "Verwerfen & synchronisieren" beim Aktualisieren</h3>
+<p>
+    „Aktualisieren" versucht weiterhin zuerst einen Fast-Forward. Weichen lokale
+    Commits oder Änderungen vom Server-Stand ab und schlägt der Fast-Forward deshalb
+    fehl, bietet ein Warndialog jetzt an, den lokalen Stand zu verwerfen und hart auf
+    den Server-Stand zurückzusetzen — statt nur einen Fehler anzuzeigen.
+</p>
+
+<h3>Fehlerbehebungen</h3>
+<ul>
+    <li>Eine länger laufende Git-Operation (z.B. Fetch) blockierte für ihre gesamte
+        Dauer alle anderen Git-Befehle in der App — behoben.</li>
+    <li>Beim Aktualisieren großer Repositories erschien teils die Fehlermeldung, dass
+        <code>.git/index.lock</code> bereits existiere — behoben (Rückkopplungsschleife
+        zwischen der Hintergrund-Beobachtung und der Status-Abfrage).</li>
+    <li>Git-Befehle, die externe, per Homebrew installierte Helfer benötigen (z.B.
+        <code>git-lfs</code> bei Repositories mit Git LFS), schlugen in der gebauten
+        App mit „command not found" fehl, obwohl sie im Terminal funktionierten —
+        behoben.</li>
+</ul>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="v1_4">Version 1.4</h2>

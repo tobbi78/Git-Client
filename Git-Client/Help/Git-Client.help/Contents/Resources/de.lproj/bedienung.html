@@ -138,6 +138,9 @@
 <ul>
     <li><strong>Umbenennen</strong> — Namen eines Ordners oder Bookmarks ändern.</li>
     <li><strong>In Ordner verschieben</strong> — Eintrag in einen anderen Ordner bewegen.</li>
+    <li><strong>Im Terminal öffnen</strong> — öffnet den Repository-Ordner in der
+        Terminal-App. Steht auch als Toolbar-Button im geöffneten Repository zur
+        Verfügung.</li>
     <li><strong>Pfad aktualisieren</strong> — erscheint, wenn das Repository an seinem
         gespeicherten Pfad nicht mehr vorhanden ist (Warnsymbol ⚠️). Wähle den neuen
         Speicherort.</li>
@@ -274,6 +277,11 @@
         und der Diff des Commits wird unten geladen.</li>
     <li>Ein <strong>Rechtsklick</strong> bietet „Branch-Namen kopieren" bzw.
         „Tag-Namen kopieren" an.</li>
+    <li>Ein Rechtsklick auf einen <strong>lokalen, nicht aktuellen Branch</strong>
+        bietet zusätzlich „Zu Branch wechseln" an (<code>git checkout</code>). Gibt es
+        unkommittierte Änderungen, zeigt ein Warndialog, dass sie beim Wechsel verworfen
+        werden — erst nach Bestätigung wird tatsächlich gewechselt. Remote-Branches
+        lassen sich nicht direkt auschecken.</li>
 </ul>
 
 <div class="tip">

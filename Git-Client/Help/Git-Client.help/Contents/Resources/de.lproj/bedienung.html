@@ -285,6 +285,15 @@
         erstellen und auschecken" an (<code>git checkout -b &lt;name&gt; &lt;remote&gt;</code>).
         Dabei entsteht ein neuer lokaler Branch mit demselben Namen, der den Remote-Branch
         trackt. Auch hier gilt der Warndialog bei unkommittierten Änderungen.</li>
+    <li>Ein Rechtsklick auf einen <strong>lokalen, nicht aktuellen Branch</strong> bietet
+        außerdem „Branch löschen" an — rein lokal (<code>git branch -d</code> bzw. bei
+        nicht gemergten Branches nach Bestätigung <code>-D</code>), Remote-Branches sind
+        davon nie betroffen. Nach einer Bestätigungsabfrage wird geprüft, ob der Branch
+        vollständig gemergt ist: ist er es, genügt eine einfache Bestätigung; ist er es
+        nicht, warnt ein zusätzlicher Dialog, dass dabei Commits verloren gehen können, die
+        auf keinem anderen Branch vorhanden sind. Der aktuelle Branch sowie der letzte
+        verbleibende lokale Branch lassen sich nicht löschen — mindestens einer bleibt immer
+        erhalten.</li>
 </ul>
 
 <div class="tip">

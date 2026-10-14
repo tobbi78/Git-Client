@@ -65,9 +65,14 @@ einfach wegzulassen.
 Diese klassischen Git-Client-Features fehlen bewusst, nicht aus Vergessenheit:
 Interaktives Staging, Commit erstellen, Push, Merge/Rebase, Cherry-Pick,
 Stash Apply/Drop/Pop (Stash **anzeigen** ist ok, s. Tier 3 #13 — Stash **verändern**
-nicht), Branch/Tag erstellen oder löschen, Konfliktauflösung. Falls sich die
+nicht), Tag erstellen oder löschen, Konfliktauflösung. Falls sich die
 Schreib-Policy jemals ändern sollte, wäre das ein bewusster, separat zu
 entscheidender Schritt — kein Nachrüsten "nebenbei".
+
+**Ausnahme seit v1.6:** Lokale Branches erstellen (als Tracking-Branch beim Auschecken
+eines Remote-Branches) und löschen (`git branch -d`/`-D`) sind jetzt erlaubt — rein
+lokal, nie Remote-Branches betreffend. Bewusst mit Tobias abgestimmte, separat
+entschiedene Erweiterung der Schreib-Policy, keine stillschweigende Ausweitung.
 
 ## Methodik-Hinweis
 

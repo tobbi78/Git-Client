@@ -165,14 +165,67 @@ struct MainWindowView: View {
         } message: {
             Text("Lokale Commits oder Änderungen weichen vom Server ab. Beim Fortfahren wird der lokale Stand verworfen und durch den Server-Stand ersetzt.")
         }
+        .confirmationDialog(
+            deleteBranchDialogTitle,
+            isPresented: Binding(
+                get: { vm?.pendingBranchDeletion != nil },
+                set: { if !$0 { vm?.cancelPendingBranchDeletion() } }
+            ),
+            titleVisibility: .visible,
+            presenting: vm?.pendingBranchDeletion
+        ) { pending in
+            // `pending` kommt aus der `presenting:`-Variante von confirmationDialog und
+            // bleibt stabil, selbst wenn SwiftUI beim Antippen dieses Buttons
+            // `pendingBranchDeletion` über den isPresented-Dismiss-Handler bereits auf
+            // nil setzt — siehe Kommentar an performPendingBranchDeletion.
+            Button(deleteBranchConfirmButtonLabel(for: pending), role: .destructive) {
+                Task { await vm?.performPendingBranchDeletion(pending) }
+            }
+            Button("Abbrechen", role: .cancel) {
+                vm?.cancelPendingBranchDeletion()
+            }
+        } message: { pending in
+            Text(deleteBranchDialogMessage(for: pending))
+        }
+        .alert(
+            "Branch löschen fehlgeschlagen",
+            isPresented: Binding(
+                get: { vm?.deleteBranchErrorMessage != nil },
+                set: { if !$0 { vm?.deleteBranchErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(vm?.deleteBranchErrorMessage ?? "")
+        }
+    }
+
+    private var deleteBranchDialogTitle: String {
+        if case .confirmForce = vm?.pendingBranchDeletion { return "Branch nicht vollständig gemerged" }
+        return "Branch löschen"
+    }
+
+    private func deleteBranchConfirmButtonLabel(for pending: PendingBranchDeletion) -> String {
+        if case .confirmForce = pending { return "Trotzdem löschen" }
+        return "Löschen"
+    }
+
+    private func deleteBranchDialogMessage(for pending: PendingBranchDeletion) -> String {
+        switch pending {
+        case .confirmSafe(let branch):
+            return "Soll der lokale Branch \"\(branch.shortName)\" wirklich gelöscht werden?"
+        case .confirmForce(let branch):
+            return "\"\(branch.shortName)\" enthält Commits, die auf keinem anderen Branch vorhanden sind. Beim Löschen gehen sie verloren."
+        }
     }
 
     @ViewBuilder
     private var localBranchesSection: some View {
         DisclosureGroup(isExpanded: $isBranchesExpanded) {
             if let vm, !vm.localBranchTree.isEmpty {
+                let localBranchCount = vm.branches.filter { !$0.isRemote }.count
                 ForEach(vm.localBranchTree) { node in
-                    branchNodeRow(node)
+                    branchNodeRow(node, localBranchCount: localBranchCount)
                 }
             } else {
                 Text(vm == nil ? "Wird geladen…" : "Keine Branches")
@@ -207,13 +260,15 @@ struct MainWindowView: View {
     }
 
     @ViewBuilder
-    private func branchNodeRow(_ node: BranchTreeNode) -> some View {
+    private func branchNodeRow(_ node: BranchTreeNode, localBranchCount: Int = 0) -> some View {
         switch node {
         case .leaf(let leaf):
             BranchRowView(
                 branch: leaf.branch,
                 displayName: leaf.displayName,
-                onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } }
+                canDelete: !leaf.branch.isCurrent && localBranchCount > 1,
+                onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } },
+                onDelete: { Task { await vm?.requestDeleteBranch(leaf.branch) } }
             )
                 .contentShape(Rectangle())
                 .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
@@ -223,7 +278,9 @@ struct MainWindowView: View {
                     BranchRowView(
                         branch: leaf.branch,
                         displayName: leaf.displayName,
-                        onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } }
+                        canDelete: !leaf.branch.isCurrent && localBranchCount > 1,
+                        onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } },
+                        onDelete: { Task { await vm?.requestDeleteBranch(leaf.branch) } }
                     )
                         .contentShape(Rectangle())
                         .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
@@ -732,7 +789,9 @@ struct MainWindowView: View {
 private struct BranchRowView: View {
     let branch: Branch
     let displayName: String
+    var canDelete: Bool = false
     var onCheckout: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -778,6 +837,20 @@ private struct BranchRowView: View {
                     onCheckout?()
                 } label: {
                     Label("Zu Branch wechseln", systemImage: "arrow.triangle.branch")
+                }
+            } else if branch.isRemote {
+                Button {
+                    onCheckout?()
+                } label: {
+                    Label("Lokalen Branch erstellen und auschecken", systemImage: "arrow.triangle.branch")
+                }
+            }
+            if canDelete {
+                Divider()
+                Button(role: .destructive) {
+                    onDelete?()
+                } label: {
+                    Label("Branch löschen", systemImage: "trash")
                 }
             }
         }

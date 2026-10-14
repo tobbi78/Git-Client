@@ -280,8 +280,11 @@
     <li>Ein Rechtsklick auf einen <strong>lokalen, nicht aktuellen Branch</strong>
         bietet zusätzlich „Zu Branch wechseln" an (<code>git checkout</code>). Gibt es
         unkommittierte Änderungen, zeigt ein Warndialog, dass sie beim Wechsel verworfen
-        werden — erst nach Bestätigung wird tatsächlich gewechselt. Remote-Branches
-        lassen sich nicht direkt auschecken.</li>
+        werden — erst nach Bestätigung wird tatsächlich gewechselt.</li>
+    <li>Ein Rechtsklick auf einen <strong>Remote-Branch</strong> bietet „Lokalen Branch
+        erstellen und auschecken" an (<code>git checkout -b &lt;name&gt; &lt;remote&gt;</code>).
+        Dabei entsteht ein neuer lokaler Branch mit demselben Namen, der den Remote-Branch
+        trackt. Auch hier gilt der Warndialog bei unkommittierten Änderungen.</li>
 </ul>
 
 <div class="tip">

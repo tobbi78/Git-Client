@@ -194,6 +194,39 @@ actor GitService {
         try await runner.runOrThrow(args, workingDirectory: repositoryPath)
     }
 
+    /// Erstellt einen neuen lokalen Branch `localName`, der `remoteBranch`
+    /// (z.B. "origin/feature") trackt, und wechselt direkt dorthin.
+    /// Mit `force: true` werden dabei unkommittete Änderungen verworfen.
+    func checkoutNewBranch(localName: String, from remoteBranch: String, force: Bool = false) async throws {
+        var args = ["checkout"]
+        if force { args.append("--force") }
+        args.append(contentsOf: ["-b", localName, remoteBranch])
+        try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+    }
+
+    /// Löscht den lokalen Branch `name` (nie den aktuellen oder Remote-Branches —
+    /// das regelt der Aufrufer). Ohne `force` lehnt git das Löschen ab, falls der
+    /// Branch noch nicht vollständig in einen anderen Branch gemerged ist
+    /// (`git branch -d`); mit `force: true` wird trotzdem gelöscht (`git branch -D`).
+    func deleteLocalBranch(name: String, force: Bool = false) async throws {
+        try await runner.runOrThrow(["branch", force ? "-D" : "-d", name], workingDirectory: repositoryPath)
+    }
+
+    /// Prüft, ob `name` vollständig in den aktuellen HEAD gemerged ist
+    /// (`git merge-base --is-ancestor`). Dient dazu, VOR der Lösch-Abfrage zu
+    /// entscheiden, ob der normale oder der Force-Löschen-Dialog angezeigt wird —
+    /// so muss nie ein zweiter confirmationDialog direkt im Anschluss an einen
+    /// gerade geschlossenen präsentiert werden (SwiftUI zeigt den sonst nicht
+    /// zuverlässig an). Schlägt die Prüfung selbst fehl, wird defensiv `false`
+    /// angenommen (lieber einmal zu oft nach einem Force-Löschen fragen).
+    func isBranchMerged(name: String) async -> Bool {
+        guard let result = try? await runner.run(
+            ["merge-base", "--is-ancestor", name, "HEAD"],
+            workingDirectory: repositoryPath
+        ) else { return false }
+        return result.exitCode == 0
+    }
+
     // MARK: - Commit-Suche
 
     /// Durchsucht das gesamte Repository nach Commits, die `criteria` erfüllen.

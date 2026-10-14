@@ -9,6 +9,13 @@
 import Foundation
 import Observation
 
+/// Zustand der ausstehenden Branch-Lösch-Abfrage — vorab (vor dem ersten Dialog)
+/// per Merge-Status entschieden, siehe `RepositoryViewModel.requestDeleteBranch`.
+nonisolated enum PendingBranchDeletion: Equatable, Sendable {
+    case confirmSafe(Branch)    // gemerged → normale "wirklich löschen?"-Abfrage
+    case confirmForce(Branch)   // nicht gemerged → Force-Löschen-Abfrage
+}
+
 @Observable
 @MainActor
 final class RepositoryViewModel {
@@ -58,13 +65,23 @@ final class RepositoryViewModel {
     var pendingCheckoutBranch: Branch? = nil   // != nil → Warndialog anzeigen
     var checkoutErrorMessage: String? = nil
 
+    // MARK: - Branch-Löschen
+    var isDeletingBranch = false
+    /// != nil → genau eine Lösch-Abfrage anzeigen (Inhalt je nach Merge-Status).
+    /// Bewusst EIN Dialog-State statt zwei verketteter: ein zweiter confirmationDialog
+    /// direkt im Anschluss an einen gerade geschlossenen wird von SwiftUI nicht
+    /// zuverlässig angezeigt, daher wird der Merge-Status schon vor der ersten
+    /// Abfrage geprüft (siehe `requestDeleteBranch`).
+    var pendingBranchDeletion: PendingBranchDeletion? = nil
+    var deleteBranchErrorMessage: String? = nil
+
     /// true, während ein Git-Befehl läuft, der `.git/index.lock` über die
     /// gesamte Laufzeit hält (Fetch/Pull/Hard-Reset/Checkout). AppModel prüft
     /// dies, um den FSEvent-getriebenen `refreshLocalStatus`-Aufruf (git status)
     /// für dasselbe, gerade geöffnete Repository zu überspringen — sonst
     /// kollidiert er bei großen Resets/Checkouts mit dem bereits bestehenden Lock.
     var isPerformingGitWriteOperation: Bool {
-        isFetching || isPulling || isCheckingOutBranch
+        isFetching || isPulling || isCheckingOutBranch || isDeletingBranch
     }
 
     // MARK: - Suche / Filter
@@ -276,8 +293,9 @@ final class RepositoryViewModel {
     // MARK: - Branch-Checkout
 
     /// Prüft auf unkommittete Änderungen; wechselt direkt oder löst den Warndialog aus.
+    /// Bei Remote-Branches wird dabei ein neuer, gleichnamiger lokaler Tracking-Branch angelegt.
     func requestCheckout(_ branch: Branch) async {
-        guard !branch.isRemote, !branch.isCurrent, !isCheckingOutBranch else { return }
+        guard !branch.isCurrent, !isCheckingOutBranch else { return }
         if await service.hasUncommittedChanges() {
             pendingCheckoutBranch = branch
         } else {
@@ -300,12 +318,74 @@ final class RepositoryViewModel {
         isCheckingOutBranch = true
         checkoutErrorMessage = nil
         do {
-            try await service.checkoutBranch(name: branch.name, force: force)
+            if branch.isRemote {
+                try await service.checkoutNewBranch(localName: branch.shortName, from: branch.name, force: force)
+            } else {
+                try await service.checkoutBranch(name: branch.name, force: force)
+            }
             await load()
         } catch {
             checkoutErrorMessage = error.localizedDescription
         }
         isCheckingOutBranch = false
+    }
+
+    // MARK: - Branch-Löschen
+
+    /// Prüft, ob der Branch gelöscht werden darf — nie der aktuelle, nie ein
+    /// Remote-Branch (das bleibt reine Anzeige), und nie der letzte verbleibende
+    /// lokale Branch (z.B. bei einem einzelnen, nicht ausgecheckten Branch im
+    /// Detached-HEAD-Zustand). Prüft den Merge-Status VORAB, damit genau ein
+    /// passender Dialog gezeigt wird (siehe Kommentar an `pendingBranchDeletion`).
+    func requestDeleteBranch(_ branch: Branch) async {
+        guard !branch.isRemote, !branch.isCurrent, !isDeletingBranch else { return }
+        guard branches.filter({ !$0.isRemote }).count > 1 else { return }
+        let merged = await service.isBranchMerged(name: branch.name)
+        pendingBranchDeletion = merged ? .confirmSafe(branch) : .confirmForce(branch)
+    }
+
+    /// Von der Lösch-Abfrage: Branch tatsächlich löschen — mit `-d` bei gemergtem,
+    /// mit `-D` (force) bei nicht gemergtem Branch. Nimmt den Abfrage-Zustand bewusst
+    /// als Parameter entgegen statt ihn erneut aus `pendingBranchDeletion` zu lesen:
+    /// beim Antippen EINES BELIEBIGEN Dialog-Buttons setzt SwiftUI die `isPresented`-
+    /// Bindung synchron auf `false` (ruft also schon den Dismiss-Handler
+    /// `cancelPendingBranchDeletion()` auf), BEVOR der hier aus dem Button-Callback
+    /// per `Task { await ... }` gestartete Aufruf überhaupt zur Ausführung kommt. Ein
+    /// erneutes Lesen von `pendingBranchDeletion` würde deshalb fast immer bereits
+    /// `nil` liefern und den Löschvorgang klammheimlich überspringen (beobachteter
+    /// Bug: Force-Löschen-Dialog bestätigt, nichts passiert, keine Fehlermeldung).
+    /// Der Wert kommt stattdessen aus der `presenting:`-Variante von
+    /// `confirmationDialog` in MainWindowView, die ihn beim Erscheinen des Dialogs
+    /// einfriert und unabhängig vom späteren Zurücksetzen an die Action-Closures
+    /// weitergibt.
+    func performPendingBranchDeletion(_ pending: PendingBranchDeletion) async {
+        pendingBranchDeletion = nil
+        switch pending {
+        case .confirmSafe(let branch):
+            await performDelete(branch, force: false)
+        case .confirmForce(let branch):
+            await performDelete(branch, force: true)
+        }
+    }
+
+    func cancelPendingBranchDeletion() {
+        pendingBranchDeletion = nil
+    }
+
+    private func performDelete(_ branch: Branch, force: Bool) async {
+        isDeletingBranch = true
+        deleteBranchErrorMessage = nil
+        do {
+            try await service.deleteLocalBranch(name: branch.name, force: force)
+            await load()
+        } catch {
+            // Egal aus welchem Grund das Löschen fehlschlägt (z.B. Merge-Status hat
+            // sich seit der Vorab-Prüfung geändert, oder der Branch ist in einem
+            // anderen Worktree ausgecheckt) — immer sichtbar melden statt
+            // stillschweigend nichts zu tun.
+            deleteBranchErrorMessage = error.localizedDescription
+        }
+        isDeletingBranch = false
     }
 
     private func refreshAheadBehind() async {

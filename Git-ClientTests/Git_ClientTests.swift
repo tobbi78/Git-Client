@@ -1383,6 +1383,235 @@ struct RepositoryViewModelCheckoutTests {
     }
 }
 
+// MARK: - RepositoryViewModel — Remote-Branch-Checkout (Integration)
+
+@Suite("RepositoryViewModel — Remote-Branch-Checkout")
+@MainActor
+struct RepositoryViewModelRemoteCheckoutTests {
+
+    let repoURL: URL
+    let bookmark: RepositoryBookmark
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vm-remote-checkout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "main-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+        try sh("git", "-C", repoURL.path, "checkout", "-b", "feature")
+        try "feature-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "commit", "-am", "feature change")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+        // "feature" existiert nur noch als Remote-Tracking-Ref — simuliert einen
+        // Branch, der nur auf dem Server existiert, nicht lokal.
+        try sh("git", "-C", repoURL.path, "update-ref", "refs/remotes/origin/feature", "feature")
+        try sh("git", "-C", repoURL.path, "branch", "-D", "feature")
+        bookmark = RepositoryBookmark(name: "Test", path: repoURL)
+    }
+
+    @Test("requestCheckout legt bei Remote-Branch einen lokalen Tracking-Branch an und wechselt")
+    func requestCheckoutOnRemoteBranchCreatesLocalBranch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let remoteFeature = try #require(vm.branches.first { $0.isRemote && $0.shortName == "feature" })
+
+        await vm.requestCheckout(remoteFeature)
+
+        #expect(vm.pendingCheckoutBranch == nil)
+        #expect(vm.checkoutErrorMessage == nil)
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.currentBranch() == "feature")
+    }
+}
+
+// MARK: - RepositoryViewModel — Branch-Löschen (Integration)
+
+@Suite("RepositoryViewModel — Branch-Löschen")
+@MainActor
+struct RepositoryViewModelBranchDeleteTests {
+
+    let repoURL: URL
+    let bookmark: RepositoryBookmark
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vm-branch-delete-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "main-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+        try sh("git", "-C", repoURL.path, "branch", "feature")
+        bookmark = RepositoryBookmark(name: "Test", path: repoURL)
+    }
+
+    @Test("requestDeleteBranch löst bei gemergtem Branch die normale Lösch-Abfrage aus")
+    func requestDeleteSetsConfirmSafeForMergedBranch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+
+        await vm.requestDeleteBranch(feature)
+
+        #expect(vm.pendingBranchDeletion == .confirmSafe(feature))
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "feature" })
+    }
+
+    @Test("requestDeleteBranch löst bei nicht gemergtem Branch direkt die Force-Abfrage aus")
+    func requestDeleteSetsConfirmForceForUnmergedBranch() async throws {
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        let f = repoURL.appendingPathComponent("feature-only.txt")
+        try "feature-only".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Nur auf feature")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+
+        await vm.requestDeleteBranch(feature)
+
+        #expect(vm.pendingBranchDeletion == .confirmForce(feature))
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "feature" })
+    }
+
+    @Test("performPendingBranchDeletion löscht einen gemergten Branch ohne Nachfrage")
+    func performPendingDeletionRemovesMergedBranch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+        await vm.requestDeleteBranch(feature)
+        let pending = try #require(vm.pendingBranchDeletion)
+
+        await vm.performPendingBranchDeletion(pending)
+
+        #expect(vm.pendingBranchDeletion == nil)
+        #expect(vm.deleteBranchErrorMessage == nil)
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "feature" } == false)
+    }
+
+    @Test("performPendingBranchDeletion löscht einen nicht gemergten Branch mit force")
+    func performPendingDeletionForceRemovesUnmergedBranch() async throws {
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        let f = repoURL.appendingPathComponent("feature-only.txt")
+        try "feature-only".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Nur auf feature")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+        await vm.requestDeleteBranch(feature)
+        #expect(vm.pendingBranchDeletion == .confirmForce(feature))
+        let pending = try #require(vm.pendingBranchDeletion)
+
+        await vm.performPendingBranchDeletion(pending)
+
+        #expect(vm.pendingBranchDeletion == nil)
+        #expect(vm.deleteBranchErrorMessage == nil)
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "feature" } == false)
+    }
+
+    @Test("performPendingBranchDeletion löscht trotzdem, wenn pendingBranchDeletion zwischenzeitlich schon zurückgesetzt wurde")
+    func performPendingDeletionSucceedsAfterDismissClearedState() async throws {
+        // Regressionstest für den gemeldeten Bug: SwiftUI setzt beim Antippen EINES
+        // BELIEBIGEN confirmationDialog-Buttons die isPresented-Bindung synchron auf
+        // false (→ cancelPendingBranchDeletion()), BEVOR der aus dem Button-Callback
+        // per Task gestartete performPendingBranchDeletion-Aufruf läuft. Simuliert hier
+        // durch expliziten cancelPendingBranchDeletion() VOR dem eigentlichen Aufruf —
+        // der Branch muss trotzdem gelöscht werden, weil der Zustand als Parameter
+        // übergeben wird statt erneut aus der (dann schon genullten) Property gelesen.
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        let f = repoURL.appendingPathComponent("feature-only.txt")
+        try "feature-only".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Nur auf feature")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+        await vm.requestDeleteBranch(feature)
+        let pending = try #require(vm.pendingBranchDeletion)
+        vm.cancelPendingBranchDeletion()
+        #expect(vm.pendingBranchDeletion == nil)
+
+        await vm.performPendingBranchDeletion(pending)
+
+        #expect(vm.deleteBranchErrorMessage == nil)
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "feature" } == false)
+    }
+
+    @Test("Fehlschlag beim tatsächlichen Löschen zeigt immer eine Fehlermeldung")
+    func failedDeleteAlwaysShowsErrorMessage() async throws {
+        // Race-Simulation: zwischen Vorab-Prüfung und Bestätigung wird der Branch
+        // von außen bereits gelöscht — der eigentliche `git branch -d` schlägt dann fehl,
+        // obwohl die Vorab-Prüfung noch "gemerged" ergeben hatte.
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+        await vm.requestDeleteBranch(feature)
+        let pending = try #require(vm.pendingBranchDeletion)
+        #expect(pending == .confirmSafe(feature))
+        try sh("git", "-C", repoURL.path, "branch", "-D", "feature")
+
+        await vm.performPendingBranchDeletion(pending)
+
+        #expect(vm.pendingBranchDeletion == nil)
+        #expect(vm.deleteBranchErrorMessage != nil)
+    }
+
+    @Test("cancelPendingBranchDeletion lässt den Branch bestehen")
+    func cancelPendingBranchDeletionLeavesBranch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let feature = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "feature" })
+        await vm.requestDeleteBranch(feature)
+
+        vm.cancelPendingBranchDeletion()
+
+        #expect(vm.pendingBranchDeletion == nil)
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "feature" })
+    }
+
+    @Test("requestDeleteBranch ignoriert den aktuellen Branch")
+    func requestDeleteIgnoresCurrentBranch() async throws {
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        let main = try #require(vm.branches.first { !$0.isRemote && $0.shortName == "main" })
+
+        await vm.requestDeleteBranch(main)
+
+        #expect(vm.pendingBranchDeletion == nil)
+        #expect(vm.branches.contains { !$0.isRemote && $0.shortName == "main" })
+    }
+
+    @Test("requestDeleteBranch löscht nie den letzten verbleibenden lokalen Branch")
+    func requestDeleteNeverRemovesLastLocalBranch() async throws {
+        // "feature" per Hand löschen, damit nur noch "main" lokal existiert
+        try sh("git", "-C", repoURL.path, "branch", "-D", "feature")
+        let vm = RepositoryViewModel(repository: bookmark)
+        await vm.load()
+        #expect(vm.branches.filter { !$0.isRemote }.count == 1)
+        let main = try #require(vm.branches.first { !$0.isRemote })
+
+        await vm.requestDeleteBranch(main)
+
+        #expect(vm.pendingBranchDeletion == nil)
+        #expect(vm.branches.filter { !$0.isRemote }.count == 1)
+    }
+}
+
 // MARK: - RepositoryViewModel — Hard-Reset-Fallback bei pull()
 
 @Suite("RepositoryViewModel — Hard-Reset-Fallback")
@@ -3700,6 +3929,104 @@ struct GitServiceCheckoutTests {
         #expect(branch == "feature")
         let content = try String(contentsOf: f, encoding: .utf8)
         #expect(content == "feature-content")
+    }
+
+    @Test("checkoutNewBranch erstellt lokalen Tracking-Branch aus Remote-Ref und wechselt")
+    func checkoutNewBranchCreatesLocalTrackingBranch() async throws {
+        // "feature" existiert nur noch als Remote-Tracking-Ref — simuliert einen
+        // Branch, der nur auf dem Server existiert, nicht lokal.
+        try sh("git", "-C", repoURL.path, "update-ref", "refs/remotes/origin/feature", "feature")
+        try sh("git", "-C", repoURL.path, "branch", "-D", "feature")
+
+        let svc = GitService(repositoryPath: repoURL)
+        try await svc.checkoutNewBranch(localName: "feature", from: "origin/feature")
+
+        let branch = await svc.currentBranch()
+        #expect(branch == "feature")
+    }
+}
+
+// MARK: - GitService — Branch löschen (Integration)
+
+@Suite("GitService — Branch löschen")
+struct GitServiceBranchDeleteTests {
+
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("branch-delete-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "T")
+        let f = repoURL.appendingPathComponent("shared.txt")
+        try "main-content".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+        try sh("git", "-C", repoURL.path, "branch", "feature")
+    }
+
+    @Test("deleteLocalBranch löscht einen gemergten Branch ohne force")
+    func deleteLocalBranchRemovesMergedBranch() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        try await svc.deleteLocalBranch(name: "feature")
+
+        let branches = try await svc.loadBranches()
+        #expect(branches.contains { $0.name == "feature" } == false)
+    }
+
+    @Test("deleteLocalBranch ohne force wirft bei nicht gemergtem Branch")
+    func deleteLocalBranchWithoutForceThrowsWhenUnmerged() async throws {
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        let f = repoURL.appendingPathComponent("feature-only.txt")
+        try "feature-only".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Nur auf feature")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+
+        let svc = GitService(repositoryPath: repoURL)
+        await #expect(throws: (any Error).self) {
+            try await svc.deleteLocalBranch(name: "feature")
+        }
+    }
+
+    @Test("deleteLocalBranch mit force löscht auch einen nicht gemergten Branch")
+    func deleteLocalBranchWithForceRemovesUnmergedBranch() async throws {
+        try sh("git", "-C", repoURL.path, "checkout", "feature")
+        let f = repoURL.appendingPathComponent("feature-only.txt")
+        try "feature-only".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Nur auf feature")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+
+        let svc = GitService(repositoryPath: repoURL)
+        try await svc.deleteLocalBranch(name: "feature", force: true)
+
+        let branches = try await svc.loadBranches()
+        #expect(branches.contains { $0.name == "feature" } == false)
+    }
+
+    @Test("isBranchMerged erkennt einen in HEAD gemergten Branch")
+    func isBranchMergedTrueForMergedBranch() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let merged = await svc.isBranchMerged(name: "feature")
+        #expect(merged == true)
+    }
+
+    @Test("isBranchMerged erkennt einen nicht gemergten Branch, auch mit Schrägstrich im Namen")
+    func isBranchMergedFalseForUnmergedBranchWithSlash() async throws {
+        try sh("git", "-C", repoURL.path, "checkout", "-b", "release/2026.2.x-develop")
+        let f = repoURL.appendingPathComponent("release-only.txt")
+        try "release-only".write(to: f, atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Nur auf release")
+        try sh("git", "-C", repoURL.path, "checkout", "main")
+
+        let svc = GitService(repositoryPath: repoURL)
+        let merged = await svc.isBranchMerged(name: "release/2026.2.x-develop")
+
+        #expect(merged == false)
     }
 }
 

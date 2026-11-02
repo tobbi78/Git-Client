@@ -599,28 +599,27 @@ git log --all --date-order --pretty=format:… -2000 --skip=2000
         Repositories oder per Klick auf „Aktualisieren" im Hinweis-Banner.</li>
 </ol>
 
-<h4>pollRemotes() — echtes <code>git fetch</code>, kein <code>ls-remote</code></h4>
+<h4>pollRemotes() — <code>ls-remote</code>-Vorprüfung, Fetch nur bei Neuigkeiten</h4>
 <p>
-    Anders als frühere Beschreibungen in dieser Hilfe nahelegten, prüft
-    <code>pollRemotes()</code> den Server nicht per <code>git ls-remote</code>, sondern
-    ruft <code>GitService.fetch(remoteURL:username:password:)</code> auf — ein
-    echtes <code>git fetch --prune</code>, das neue Commit-Objekte herunterlädt
-    (kein Checkout, aber kein Download-freier Vorgang). Danach wird
-    <code>aheadBehind()</code> (<code>git rev-list --left-right --count
-    @{upstream}...HEAD</code>) neu berechnet.
+    <code>pollRemotes()</code> fragt pro Repository zunächst per
+    <code>GitService.remoteHeads(remoteURL:username:password:)</code>
+    (<code>git ls-remote --heads</code>) nur die Server-Refs ab — ohne Objekt-Download —
+    und vergleicht sie mit der lokalen Ref-Signatur
+    (<code>RepoRefSnapshot.remoteAhead</code>). Nur bei Abweichung folgt ein echtes
+    <code>git fetch --prune</code> (<code>GitService.fetch</code>) und eine Neuberechnung
+    von <code>aheadBehind()</code> (<code>git rev-list --left-right --count
+    @{upstream}...HEAD</code>).
 </p>
 <div class="note">
-    <strong>Bekannte Einschränkung:</strong>
-    <code>pollRemotes()</code> überspringt Repositories, deren Bookmark keine
-    <code>remoteURL</code> gespeichert hat (<code>guard let remoteURL =
-    repo.remoteURL, !remoteURL.isEmpty else { continue }</code>) — das betrifft
-    alle über „Repository hinzufügen" eingebundenen Repositories, da nur der
-    „Klonen"-Dialog eine <code>remoteURL</code> im Bookmark hinterlegt. Diese
-    Repositories erhalten ausschließlich die lokale FSEvents-Erkennung, keinen
-    automatischen Remote-Check — obwohl der manuelle „Vom Server prüfen"-Button
-    für sie über den lokal konfigurierten Remote-Namen einwandfrei funktioniert.
-    Bewusst so belassen (Stand 2026-09-15); siehe TODO-Kommentar direkt über
-    <code>pollRemotes()</code> in <code>AppModel.swift</code>.
+    <strong>Remote-Auflösung:</strong>
+    Geklonte Repositories übergeben die im Bookmark gespeicherte <code>remoteURL</code>
+    (mit Keychain-Credentials, transient in die URL injiziert). Über „Repository
+    hinzufügen" eingebundene Repositories haben keine <code>remoteURL</code>;
+    <code>remoteHeads</code> und <code>fetch</code> fallen dann auf den lokal
+    konfigurierten Remote-Namen zurück — identisch zum manuellen „Vom Server prüfen"-Button.
+    Repositories ganz ohne Remote werden über <code>remoteName()</code> übersprungen.
+    Fehler (offline, fehlende Credentials) werden still ignoriert;
+    <code>GIT_TERMINAL_PROMPT=0</code> verhindert interaktive Abfragen.
 </div>
 
 <h3>RepoStatus <code style="font-size:0.8em">Models/RepoStatus.swift</code></h3>

@@ -277,13 +277,11 @@ final class AppModel {
         repoStatus[repoID] = st
     }
 
-    // TODO: pollRemotes() überspringt Repositories ohne gespeicherte remoteURL, d.h.
-    // über "Repository hinzufügen" eingebundene Repos bekommen nie einen automatischen
-    // Remote-Check (nur lokale FSEvents-Erkennung) — der manuelle "Vom Server prüfen"-Button
-    // (RepositoryViewModel.fetch) funktioniert für diese Repos aber problemlos über den
-    // lokal konfigurierten Remote-Namen. Aktuell bewusst so gelassen (Stand 2026-09-15);
-    // falls gewünscht: guard auf `try? await service.remoteName()` statt bookmark.remoteURL
-    // umstellen, analog zum manuellen Fetch-Pfad.
+    // Geklonte Repos nutzen die im Bookmark gespeicherte remoteURL samt Keychain-Credentials;
+    // über "Repository hinzufügen" eingebundene Repos haben keine und fallen in GitService
+    // (remoteHeads/fetch) auf den lokal konfigurierten Remote zurück — analog zum manuellen
+    // Fetch-Pfad (RepositoryViewModel.fetch). Repos ganz ohne Remote werden über
+    // `remoteName()` übersprungen.
     //
     // Zugriffsebene bewusst nicht `private`: Tests rufen diese Methode direkt auf, um nicht
     // auf den remotePollInterval-Timer (Minimum 60s) warten zu müssen — analog zum
@@ -293,7 +291,6 @@ final class AppModel {
         for repo in repos {
             guard !Task.isCancelled else { break }
             guard let service = monitoringServices[repo.id] else { continue }
-            guard let remoteURL = repo.remoteURL, !remoteURL.isEmpty else { continue }
 
             let password = KeychainStore.load(for: repo.id)
             do {
@@ -302,7 +299,7 @@ final class AppModel {
                 // folgt unten der teure echte Fetch.
                 guard let remoteName = try await service.remoteName() else { continue }
                 let localSig = await service.localRefSignature()
-                let heads = try await service.remoteHeads(remoteURL: remoteURL, username: repo.username, password: password)
+                let heads = try await service.remoteHeads(remoteURL: repo.remoteURL, username: repo.username, password: password)
                 let aheadBranches = RepoRefSnapshot.remoteAhead(localSignature: localSig, remoteHeads: heads, remoteName: remoteName)
 
                 var news = newCommitStatus[repo.id] ?? RepoNewCommits()
@@ -313,7 +310,7 @@ final class AppModel {
 
                 // Es gibt tatsächlich Neuigkeiten — jetzt lohnt sich der echte Fetch, um
                 // die Objekte zu holen und Ahead/Behind exakt zu aktualisieren.
-                try await service.fetch(remoteURL: remoteURL, username: repo.username, password: password)
+                try await service.fetch(remoteURL: repo.remoteURL, username: repo.username, password: password)
                 if let ab = try? await service.aheadBehind() {
                     var st = repoStatus[repo.id] ?? RepoStatus()
                     st.hasUpstream = true

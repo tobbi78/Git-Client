@@ -487,12 +487,13 @@
     <li><strong>Lokal:</strong> Änderungen im <code>.git</code>-Verzeichnis werden
         per FSEvents sofort erkannt (z.B. ein Commit im Terminal) — für
         <strong>alle</strong> Repositories in der Übersicht.</li>
-    <li><strong>Remote:</strong> In einstellbarem Intervall prüft die App per
-        <code>git fetch</code>, ob es auf dem Server neue Commits gibt. Das
-        funktioniert derzeit nur für Repositories, die über <strong>„Klonen"</strong>
-        hinzugefügt wurden (deren Remote-URL in der App gespeichert ist). Über
-        <strong>„Repository hinzufügen"</strong> eingebundene Repositories erhalten
-        nur die lokale Erkennung, keinen periodischen Remote-Check.</li>
+    <li><strong>Remote:</strong> In einstellbarem Intervall fragt die App per
+        <code>git ls-remote</code> günstig die Branch-Stände auf dem Server ab und holt
+        nur bei Neuigkeiten per <code>git fetch</code> nach. Das gilt für alle
+        Repositories mit eingerichtetem Remote: Geklonte Repositories nutzen die in der
+        App gespeicherte URL und Zugangsdaten, über <strong>„Repository hinzufügen"</strong>
+        eingebundene die lokale git-Konfiguration (z.B. Credential-Helper oder SSH-Agent).
+        Fehlen gültige Zugangsdaten, bleibt die Prüfung still ohne Ergebnis.</li>
 </ul>
 
 <h3>Wo die Hinweise erscheinen</h3>
@@ -561,10 +562,10 @@
     <tr><td>Neue Commits automatisch anzeigen</td><td>Schaltet die in
         <a href="#autorefresh">automatische Erkennung</a> beschriebene Hintergrund-Beobachtung
         ein oder aus.</td></tr>
-    <tr><td>Remote-Prüf-Intervall</td><td>Wie oft per <code>git fetch</code> auf neue
+    <tr><td>Remote-Prüf-Intervall</td><td>Wie oft der Server auf neue
         Commits geprüft wird, in Sekunden (Mindestwert 60; 0 deaktiviert nur die
-        Remote-Prüfung, lokale Erkennung bleibt aktiv). Gilt nur für Repositories mit
-        gespeicherter Remote-URL — siehe <a href="#autorefresh">automatische Erkennung</a>.</td></tr>
+        Remote-Prüfung, lokale Erkennung bleibt aktiv). Gilt für alle Repositories mit
+        eingerichtetem Remote — siehe <a href="#autorefresh">automatische Erkennung</a>.</td></tr>
 </table>
 
 <h4>Änderungen speichern</h4>

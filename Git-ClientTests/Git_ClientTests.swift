@@ -4872,3 +4872,73 @@ struct RepositoryViewModelCoverageTests {
         #expect(vm.isSearchActive)
     }
 }
+
+// MARK: - Kaputte Refs
+
+@Suite("Kaputte Refs (Leerzeichen im Ref-Namen)")
+@MainActor
+struct BrokenRefTests {
+    let repoURL: URL
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("broken-ref-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repoURL, withIntermediateDirectories: true)
+        try sh("git", "-C", repoURL.path, "init", "-b", "main")
+        try sh("git", "-C", repoURL.path, "config", "user.email", "test@example.com")
+        try sh("git", "-C", repoURL.path, "config", "user.name", "Tester")
+        try "a".write(to: repoURL.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try sh("git", "-C", repoURL.path, "add", ".")
+        try sh("git", "-C", repoURL.path, "commit", "-m", "Initial commit")
+        // Simuliert eine von Finder/Sync-Tool angelegte Duplikat-Datei „main 2".
+        let heads = repoURL.appendingPathComponent(".git/refs/heads")
+        try FileManager.default.copyItem(
+            at: heads.appendingPathComponent("main"),
+            to: heads.appendingPathComponent("main 2")
+        )
+    }
+
+    @Test("parseBrokenRefs extrahiert Ref-Namen aus den Git-Warnungen")
+    func parseBrokenRefs() {
+        let stderr = """
+        warning: ignoring ref with broken name refs/heads/develop 2
+        warning: something else
+        warning: ignoring ref with broken name refs/tags/v1 copy
+        """
+        #expect(GitService.parseBrokenRefs(stderr: stderr)
+                == ["refs/heads/develop 2", "refs/tags/v1 copy"])
+        #expect(GitService.parseBrokenRefs(stderr: "").isEmpty)
+    }
+
+    @Test("loadCommits funktioniert trotz kaputtem Ref")
+    func loadCommitsToleratesBrokenRef() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        #expect(commits.count == 1)
+        #expect(commits.first?.subject == "Initial commit")
+    }
+
+    @Test("Commit-Statistiken funktionieren trotz kaputtem Ref")
+    func statisticsToleratesBrokenRef() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let authors = try await svc.authorCommitCounts()
+        #expect(authors.count == 1)
+        let timestamps = try await svc.commitTimestamps()
+        #expect(!timestamps.isEmpty)
+    }
+
+    @Test("brokenRefs meldet den kaputten Ref")
+    func brokenRefsReportsRef() async {
+        let svc = GitService(repositoryPath: repoURL)
+        #expect(await svc.brokenRefs() == ["refs/heads/main 2"])
+    }
+
+    @Test("RepositoryViewModel lädt trotz kaputtem Ref ohne Fehler und zeigt ihn an")
+    func viewModelLoadsAndExposesBrokenRef() async {
+        let vm = RepositoryViewModel(repository: RepositoryBookmark(name: "T", path: repoURL))
+        await vm.load()
+        #expect(vm.errorMessage == nil)
+        #expect(vm.commits.count == 1)
+        #expect(vm.brokenRefs == ["refs/heads/main 2"])
+    }
+}

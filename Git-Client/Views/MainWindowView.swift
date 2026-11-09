@@ -595,8 +595,31 @@ struct MainWindowView: View {
 
     // MARK: - Commit-Liste
 
-    @ViewBuilder
     private var commitHistory: some View {
+        VStack(spacing: 0) {
+            if let vm, !vm.brokenRefs.isEmpty {
+                brokenRefsBanner(vm.brokenRefs)
+            }
+            commitHistoryContent
+        }
+    }
+
+    private func brokenRefsBanner(_ refs: [String]) -> some View {
+        Label {
+            Text("Kaputte Refs werden ignoriert: \(refs.joined(separator: ", ")). Die zugehörigen Dateien in .git/refs können gelöscht werden.")
+                .font(.caption)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.orange.opacity(0.12))
+    }
+
+    @ViewBuilder
+    private var commitHistoryContent: some View {
         if let vm {
             if vm.isLoading {
                 ProgressView("Wird geladen…")

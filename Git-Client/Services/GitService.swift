@@ -229,6 +229,39 @@ actor GitService {
         )
     }
 
+    /// Entfernt eine verwaiste `.git/index.lock`. Bewusste, vom Nutzer ausgelöste Ausnahme
+    /// von der rein lesenden Policy. Hält noch ein Prozess die Datei offen (laufender
+    /// git-Befehl), wird nichts gelöscht und `GitError.indexLockInUse` geworfen.
+    /// - Returns: false, wenn gar keine Sperrdatei (mehr) existierte.
+    func removeStaleIndexLock() async throws -> Bool {
+        let gitDir = try await runner.runOrThrow(
+            ["rev-parse", "--absolute-git-dir"],
+            workingDirectory: repositoryPath
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        let lockPath = (gitDir as NSString).appendingPathComponent("index.lock")
+        guard FileManager.default.fileExists(atPath: lockPath) else { return false }
+        if await Self.isFileOpen(atPath: lockPath) { throw GitError.indexLockInUse }
+        try FileManager.default.removeItem(atPath: lockPath)
+        return true
+    }
+
+    /// Prüft per `lsof`, ob ein Prozess die Datei gerade geöffnet hat (git hält die
+    /// index.lock während seiner gesamten Laufzeit offen).
+    nonisolated private static func isFileOpen(atPath path: String) async -> Bool {
+        await Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+            process.arguments = ["-t", "--", path]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            do { try process.run() } catch { return false }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return !data.isEmpty
+        }.value
+    }
+
     /// Wechselt auf den lokalen Branch `name`. Mit `force: true` werden dabei
     /// unkommittete Änderungen verworfen (git checkout --force) — wird nur nach
     /// expliziter Nutzerbestätigung verwendet.

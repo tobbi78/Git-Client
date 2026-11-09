@@ -547,11 +547,20 @@ struct MainWindowView: View {
     @ViewBuilder
     private func syncStatus(vm: RepositoryViewModel) -> some View {
         if let message = vm.remoteStatusMessage {
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            HStack(spacing: 8) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if vm.hasIndexLockConflict {
+                    Button("Sperre aufheben") {
+                        Task { await vm.removeIndexLock() }
+                    }
+                    .controlSize(.small)
+                    .help("Löscht die verwaiste .git/index.lock, sofern kein Git-Prozess sie gerade verwendet.")
+                }
+            }
         } else if !vm.hasRemote {
             Text("Kein Remote")
                 .font(.caption)

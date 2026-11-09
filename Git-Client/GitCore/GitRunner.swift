@@ -78,6 +78,13 @@ actor GitRunner {
                 // sinnvoll; ohne diesen Schutz würde ls-remote/fetch an einem Prompt hängen.
                 var env = ProcessInfo.processInfo.environment
                 env["GIT_TERMINAL_PROMPT"] = "0"
+                // Lesende Befehle (v.a. `git status` beim Auto-Refresh/FSEvent-Polling)
+                // schreiben sonst opportunistisch den Index neu und legen dafür
+                // `.git/index.lock` an. Läuft parallel ein Fetch/Checkout, scheitert einer
+                // von beiden mit "Unable to create index.lock: File exists". Mit "0"
+                // überspringen reine Lesebefehle diesen Schreibversuch; schreibende
+                // Befehle sperren weiterhin regulär.
+                env["GIT_OPTIONAL_LOCKS"] = "0"
                 // Eine per Doppelklick/Dock gestartete GUI-App erbt NICHT die Shell-Profile
                 // (.zprofile/.zshrc) und damit auch nicht deren PATH-Ergänzungen — anders als
                 // ein aus dem Terminal gestartetes git. Befehle, die git über PATH aufgerufene

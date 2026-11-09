@@ -114,6 +114,13 @@ struct GitResult {
     <li>Statt eines geteilten <code>Process</code>-Pools wird für jeden Aufruf
         eine eigene <code>Process</code>-Instanz erstellt; das vereinfacht
         Fehlerbehandlung und Cancellation.</li>
+    <li><code>GitRunner</code> setzt für jeden Prozess <code>GIT_OPTIONAL_LOCKS=0</code>:
+        lesende Befehle (v.a. <code>git status</code> beim Auto-Refresh) schreiben den
+        Index nicht opportunistisch neu und legen dadurch keine <code>.git/index.lock</code>
+        an, die mit schreibenden Befehlen kollidieren könnte.
+        <code>GitService.removeStaleIndexLock()</code> löscht eine verwaiste Sperre
+        auf Nutzeraktion, nachdem <code>lsof</code> bestätigt hat, dass kein Prozess sie
+        offen hält.</li>
     <li>App Sandbox ist deaktiviert (<code>ENABLE_APP_SANDBOX = NO</code>), damit
         <code>Process</code> auf beliebige Verzeichnisse zugreifen kann.</li>
 </ul>

@@ -17,13 +17,27 @@ struct RepositoryBookmark: Identifiable, Hashable, Codable {
     // Sicher persistierbar (kein Geheimnis):
     var remoteURL: String?   // HTTPS-Remote für geklonte Repos
     var username: String?    // HTTPS-Benutzername — Passwort/Token NUR im Keychain
+    var isPinned: Bool       // Als Favorit oben in der Seitenleiste angepinnt
 
-    init(id: UUID = UUID(), name: String, path: URL, remoteURL: String? = nil, username: String? = nil) {
+    init(id: UUID = UUID(), name: String, path: URL, remoteURL: String? = nil, username: String? = nil, isPinned: Bool = false) {
         self.id = id
         self.name = name
         self.path = path
         self.remoteURL = remoteURL
         self.username = username
+        self.isPinned = isPinned
+    }
+
+    // Eigenes Dekodieren: ältere bookmarks.json kennt `isPinned` nicht. Das synthetisierte
+    // Decodable würde daran scheitern und den gesamten Baum verwerfen.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(URL.self, forKey: .path)
+        remoteURL = try c.decodeIfPresent(String.self, forKey: .remoteURL)
+        username = try c.decodeIfPresent(String.self, forKey: .username)
+        isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 }
 
@@ -85,6 +99,28 @@ extension [BookmarkNode] {
             }
         }
         return result
+    }
+
+    /// Alle angepinnten Repositories, alphabetisch nach Name sortiert.
+    func pinnedRepositories() -> [RepositoryBookmark] {
+        allRepositories()
+            .filter(\.isPinned)
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Setzt den Favoriten-Status des Repositories mit der gegebenen ID.
+    mutating func setPinned(id: UUID, _ pinned: Bool) {
+        for i in indices {
+            if case .repository(var repo) = self[i], repo.id == id {
+                repo.isPinned = pinned
+                self[i] = .repository(repo)
+                return
+            }
+            if case .folder(var folder) = self[i] {
+                folder.children.setPinned(id: id, pinned)
+                self[i] = .folder(folder)
+            }
+        }
     }
 
     /// Gibt alle Ordner im Baum rekursiv zurück (flache Liste, Tiefensuche).

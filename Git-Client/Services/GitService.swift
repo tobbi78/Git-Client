@@ -52,8 +52,53 @@ actor GitService {
         let format = "--pretty=format:\(GitLogParser.formatString)"
         var args = ["log", "--all", "--date-order", format, "-\(limit)"]
         if skip > 0 { args.append("--skip=\(skip)") }
-        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+        let output = try await runLogAllTolerant(args)
         return GitLogParser.parse(output)
+    }
+
+    /// Führt ein `git log --all …` aus. Scheitert es an einem kaputten Ref (z.B. einer
+    /// durch Sync-Tools/Finder angelegten Datei `.git/refs/heads/develop 2` mit Leerzeichen
+    /// im Namen → `fatal: bad object …`), wird erneut mit den Namen aller gültigen Refs
+    /// statt `--all` gestartet. `for-each-ref` überspringt kaputte Refs nur mit Warnung.
+    private func runLogAllTolerant(_ args: [String]) async throws -> String {
+        let result = try await runner.run(args, workingDirectory: repositoryPath)
+        if result.exitCode == 0 { return result.stdout }
+
+        guard result.stderr.contains("bad object"),
+              let allIndex = args.firstIndex(of: "--all") else {
+            throw GitError.nonZeroExit(
+                code: result.exitCode,
+                stderr: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        let refs = try await runner.runOrThrow(
+            ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes", "refs/tags"],
+            workingDirectory: repositoryPath
+        )
+        let validRefs = refs.split(separator: "\n").map(String.init)
+        var fallbackArgs = args
+        fallbackArgs.replaceSubrange(allIndex...allIndex, with: ["HEAD"] + validRefs)
+        return try await runner.runOrThrow(fallbackArgs, workingDirectory: repositoryPath)
+    }
+
+    /// Namen kaputter Refs (z.B. `refs/heads/develop 2`), die Git beim Auflisten der Refs
+    /// mit „ignoring ref with broken name" überspringt. Leer, wenn alles in Ordnung ist.
+    func brokenRefs() async -> [String] {
+        guard let result = try? await runner.run(
+            ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes", "refs/tags"],
+            workingDirectory: repositoryPath
+        ) else { return [] }
+        return Self.parseBrokenRefs(stderr: result.stderr)
+    }
+
+    /// Extrahiert die Ref-Namen aus Zeilen der Form
+    /// `warning: ignoring ref with broken name <ref>`.
+    nonisolated static func parseBrokenRefs(stderr: String) -> [String] {
+        let prefix = "warning: ignoring ref with broken name "
+        return stderr.split(separator: "\n").compactMap { line in
+            line.hasPrefix(prefix) ? String(line.dropFirst(prefix.count)) : nil
+        }
     }
 
     /// Lädt einen einzelnen Commit anhand seines vollen SHA.
@@ -266,7 +311,7 @@ actor GitService {
             args.append("--until=\(iso.string(from: until))")
         }
 
-        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+        let output = try await runLogAllTolerant(args)
         var results = GitLogParser.parse(output)
 
         // SHA-Filter: wenn SHA zusammen mit anderen Kriterien angegeben → in-memory
@@ -377,20 +422,14 @@ actor GitService {
     /// Liefert Commits pro Autor über die gesamte Histoire (`git shortlog -sne --all`).
     /// Parsing erfolgt in `RepositoryStatistics.parseShortlog`.
     func authorCommitCounts() async throws -> [AuthorStat] {
-        let output = try await runner.runOrThrow(
-            ["shortlog", "-sne", "--all"],
-            workingDirectory: repositoryPath
-        )
+        let output = try await runLogAllTolerant(["shortlog", "-sne", "--all"])
         return RepositoryStatistics.parseShortlog(output)
     }
 
     /// Liefert Unix-Zeitstempel aller Commits als Rohtext (ein Timestamp pro Zeile).
     /// Parsing und Aggregation erfolgen in `RepositoryStatistics.aggregate`.
     func commitTimestamps() async throws -> String {
-        try await runner.runOrThrow(
-            ["log", "--all", "--pretty=format:%at"],
-            workingDirectory: repositoryPath
-        )
+        try await runLogAllTolerant(["log", "--all", "--pretty=format:%at"])
     }
 
     // MARK: - Lokale Repo-Statusabfragen (kein Netzwerk)

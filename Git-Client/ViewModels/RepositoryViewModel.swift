@@ -40,6 +40,8 @@ final class RepositoryViewModel {
     var isLoadingMore = false   // Nachlade-Vorgang läuft
     var canLoadMore = true      // false sobald git log < pageSize zurückgibt
     var errorMessage: String? = nil
+    /// Namen kaputter Refs im Repo (werden umgangen, Anzeige als Hinweis).
+    var brokenRefs: [String] = []
 
     /// Anzahl der per git-log-Paginierung geladenen Commits (Basis für --skip).
     /// Nicht identisch mit commits.count, da loadMissingBranchTips weitere Commits injiziert.
@@ -183,6 +185,7 @@ final class RepositoryViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+        brokenRefs = await service.brokenRefs()
         hasRemote = await service.hasRemote()
         await refreshAheadBehind()
         isLoading = false

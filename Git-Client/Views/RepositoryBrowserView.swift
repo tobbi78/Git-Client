@@ -56,6 +56,29 @@ struct RepositoryBrowserView: View {
     private var bookmarkTree: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                let pinned = appModel.bookmarkNodes.pinnedRepositories()
+                if !pinned.isEmpty {
+                    Label("Favoriten", systemImage: "pin.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 8)
+                        .padding(.bottom, 2)
+                    ForEach(pinned) { repo in
+                        BookmarkNodeView(
+                            node: .repository(repo),
+                            depth: 0,
+                            isInFavoritesSection: true,
+                            dragTargetFolderID: $dragTargetFolderID,
+                            onRequestRename: { id, name in
+                                renamingID = id
+                                renameText = name
+                                isRenaming = true
+                            }
+                        )
+                    }
+                    Divider()
+                        .padding(.vertical, 6)
+                }
                 ForEach(appModel.bookmarkNodes) { node in
                     BookmarkNodeView(
                         node: node,
@@ -141,11 +164,28 @@ struct RepositoryBrowserView: View {
     }
 }
 
+// MARK: - Optionales Draggable
+
+/// `.draggable` lässt sich nicht bedingt anwenden; ohne ID bleibt die Zeile ein reines Ziel.
+private struct OptionalDraggable: ViewModifier {
+    let id: String?
+
+    func body(content: Content) -> some View {
+        if let id {
+            content.draggable(id)
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Rekursiver Baumknoten
 
 private struct BookmarkNodeView: View {
     let node: BookmarkNode
     let depth: Int
+    /// Zeile steht im Favoriten-Abschnitt: kein Drag, kein Verschieben-Menü, kein Pin-Symbol.
+    var isInFavoritesSection = false
     @Binding var dragTargetFolderID: UUID?
     let onRequestRename: (UUID, String) -> Void
 
@@ -177,10 +217,17 @@ private struct BookmarkNodeView: View {
                 .font(.callout)
                 .foregroundStyle(pathExists ? Color.secondary : Color.orange)
             VStack(alignment: .leading, spacing: 1) {
-                Text(repo.name)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .foregroundStyle(pathExists ? Color.primary : Color.secondary)
+                HStack(spacing: 4) {
+                    Text(repo.name)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .foregroundStyle(pathExists ? Color.primary : Color.secondary)
+                    if repo.isPinned && !isInFavoritesSection {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Text(repo.path.path)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -232,7 +279,7 @@ private struct BookmarkNodeView: View {
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { if pathExists { appModel.openRepository(repo) } }
-        .draggable(node.id.uuidString)
+        .modifier(OptionalDraggable(id: isInFavoritesSection ? nil : node.id.uuidString))
         .contextMenu { repoContextMenu(node: node, repo: repo, pathExists: pathExists) }
     }
 
@@ -342,11 +389,17 @@ private struct BookmarkNodeView: View {
 
     @ViewBuilder
     private func repoContextMenu(node: BookmarkNode, repo: RepositoryBookmark, pathExists: Bool) -> some View {
+        Button(repo.isPinned ? "Von Favoriten lösen" : "Als Favorit anpinnen") {
+            appModel.setPinned(id: repo.id, !repo.isPinned)
+        }
+
         Button("Umbenennen") {
             onRequestRename(node.id, node.displayName)
         }
 
-        moveMenu(for: node)
+        if !isInFavoritesSection {
+            moveMenu(for: node)
+        }
 
         if pathExists {
             Button("Im Finder zeigen") {

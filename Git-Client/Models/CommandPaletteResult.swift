@@ -75,8 +75,10 @@ extension CommandPaletteResult {
     ) -> [CommandPaletteResult] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        let repoMatches = repositories
-            .filter { q.isEmpty || $0.name.lowercased().contains(q) }
+        // Angepinnte Favoriten zuerst (stabil: sonst bleibt die Reihenfolge erhalten),
+        // bevor das Limit greift.
+        let filtered = repositories.filter { q.isEmpty || $0.name.lowercased().contains(q) }
+        let repoMatches = (filtered.filter(\.isPinned) + filtered.filter { !$0.isPinned })
             .prefix(limitPerCategory)
             .map(CommandPaletteResult.repository)
 

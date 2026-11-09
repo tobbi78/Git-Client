@@ -123,6 +123,11 @@ final class AppModel {
         persist()
     }
 
+    func setPinned(id: UUID, _ pinned: Bool) {
+        bookmarkNodes.setPinned(id: id, pinned)
+        persist()
+    }
+
     func updateRepositoryPath(id: UUID, newPath: URL) {
         bookmarkNodes.updateRepositoryPath(id: id, newPath: newPath)
         persist()

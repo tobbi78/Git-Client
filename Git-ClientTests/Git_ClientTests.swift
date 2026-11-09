@@ -5134,3 +5134,103 @@ struct BrokenRefTests {
         #expect(vm.brokenRefs == ["refs/heads/main 2"])
     }
 }
+
+// MARK: - Favoriten / angepinnte Repositories
+
+@Suite("Favoriten")
+@MainActor
+struct PinnedRepositoriesTests {
+
+    private func makeRepo(_ name: String, pinned: Bool = false) -> RepositoryBookmark {
+        RepositoryBookmark(name: name, path: URL(fileURLWithPath: "/tmp/\(name)"), isPinned: pinned)
+    }
+
+    @Test("Altes JSON ohne isPinned wird geladen, isPinned ist false")
+    func decodesLegacyJSON() throws {
+        let id = UUID()
+        let json = """
+        [{"repository":{"_0":{"id":"\(id.uuidString)","name":"Alt","path":"file:///tmp/alt"}}}]
+        """
+        let nodes = try JSONDecoder().decode([BookmarkNode].self, from: Data(json.utf8))
+        #expect(nodes.allRepositories().first?.isPinned == false)
+        #expect(nodes.allRepositories().first?.name == "Alt")
+    }
+
+    @Test("isPinned übersteht Encode/Decode über den BookmarkStore")
+    func pinnedRoundtripThroughStore() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pinned-\(UUID().uuidString).json")
+        let store = BookmarkStore(fileURL: url)
+        store.save([.repository(makeRepo("A", pinned: true)), .repository(makeRepo("B"))])
+        let loaded = store.load().allRepositories()
+        #expect(loaded.map(\.isPinned) == [true, false])
+    }
+
+    @Test("setPinned wirkt auf Root-Ebene und in verschachtelten Ordnern")
+    func setPinnedRootAndNested() {
+        let nested = makeRepo("Nested")
+        let root = makeRepo("Root")
+        let inner = BookmarkFolder(name: "Inner", children: [.repository(nested)])
+        let outer = BookmarkFolder(name: "Outer", children: [.folder(inner)])
+        var tree: [BookmarkNode] = [.folder(outer), .repository(root)]
+
+        tree.setPinned(id: nested.id, true)
+        tree.setPinned(id: root.id, true)
+        #expect(tree.allRepositories().allSatisfy { $0.isPinned })
+
+        tree.setPinned(id: nested.id, false)
+        #expect(tree.pinnedRepositories().map(\.name) == ["Root"])
+    }
+
+    @Test("setPinned mit unbekannter ID ändert nichts")
+    func setPinnedUnknownID() {
+        var tree: [BookmarkNode] = [.repository(makeRepo("A"))]
+        tree.setPinned(id: UUID(), true)
+        #expect(tree.pinnedRepositories().isEmpty)
+    }
+
+    @Test("pinnedRepositories filtert und sortiert alphabetisch über Ordner hinweg")
+    func pinnedRepositoriesSorted() {
+        let folder = BookmarkFolder(name: "F", children: [
+            .repository(makeRepo("Zeta", pinned: true)),
+            .repository(makeRepo("Nope"))
+        ])
+        let tree: [BookmarkNode] = [
+            .repository(makeRepo("beta", pinned: true)),
+            .folder(folder),
+            .repository(makeRepo("Alpha", pinned: true))
+        ]
+        #expect(tree.pinnedRepositories().map(\.name) == ["Alpha", "beta", "Zeta"])
+    }
+
+    @Test("AppModel.setPinned persistiert")
+    func appModelPersistsPin() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("appmodel-pin-\(UUID().uuidString).json")
+        let model = AppModel(store: BookmarkStore(fileURL: url))
+        model.addRepository(name: "Repo", path: URL(fileURLWithPath: "/tmp/r"))
+        guard let id = model.bookmarkNodes.allRepositories().first?.id else {
+            Issue.record("Repository fehlt")
+            return
+        }
+        model.setPinned(id: id, true)
+        let reloaded = AppModel(store: BookmarkStore(fileURL: url))
+        #expect(reloaded.bookmarkNodes.pinnedRepositories().map(\.name) == ["Repo"])
+    }
+
+    @Test("Befehlspalette: angepinnte Repos stehen zuerst, auch vor dem Limit")
+    func palettePinnedFirst() {
+        let repos = [makeRepo("a1"), makeRepo("a2"), makeRepo("a3"), makeRepo("a4", pinned: true)]
+
+        let all = CommandPaletteResult.search(
+            query: "", repositories: repos, branches: [], tags: [], commits: []
+        )
+        #expect(all.map(\.title) == ["a4", "a1", "a2", "a3"])
+
+        let limited = CommandPaletteResult.search(
+            query: "a", repositories: repos, branches: [], tags: [], commits: [],
+            limitPerCategory: 2
+        )
+        #expect(limited.map(\.title) == ["a4", "a1"])
+    }
+}

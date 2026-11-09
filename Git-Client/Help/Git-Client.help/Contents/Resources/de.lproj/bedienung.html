@@ -341,6 +341,22 @@
     Shell auflösen musst.
 </p>
 
+<h3 id="indexlock">Fehler „index.lock: File exists"</h3>
+<p>
+    Meldet Git neben „Vom Server prüfen" einen Fehler wie
+    <code>Unable to create '…/.git/index.lock': File exists</code>, hat ein anderer
+    Git-Prozess das Repository gerade gesperrt oder eine Sperrdatei ist nach einem
+    Abbruch zurückgeblieben. In diesem Fall erscheint neben der Meldung der Button
+    <strong>„Sperre aufheben"</strong>.
+</p>
+
+<div class="note">
+    Der Button löscht <code>.git/index.lock</code> und lädt das Repository neu — aber
+    nur, wenn die Datei von keinem laufenden Prozess mehr geöffnet ist. Läuft noch ein
+    Git-Befehl, zeigt die App stattdessen einen Hinweis, kurz zu warten und es erneut
+    zu versuchen.
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="diff">Diff ansehen</h2>
 

@@ -293,6 +293,24 @@ final class RepositoryViewModel {
         pendingHardReset = false
     }
 
+    // MARK: - Index-Sperre
+
+    /// true, wenn die angezeigte Remote-Fehlermeldung eine bestehende `index.lock` meldet.
+    var hasIndexLockConflict: Bool {
+        remoteStatusMessage.map(GitError.isIndexLockMessage) ?? false
+    }
+
+    /// Entfernt die verwaiste `index.lock` (nur wenn kein Prozess sie hält) und lädt neu.
+    func removeIndexLock() async {
+        do {
+            _ = try await service.removeStaleIndexLock()
+            remoteStatusMessage = nil
+            await load()
+        } catch {
+            remoteStatusMessage = error.localizedDescription
+        }
+    }
+
     // MARK: - Branch-Checkout
 
     /// Prüft auf unkommittete Änderungen; wechselt direkt oder löst den Warndialog aus.

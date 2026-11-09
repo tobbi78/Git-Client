@@ -2038,6 +2038,153 @@ struct GitServiceHardResetTests {
     }
 }
 
+// MARK: - Index-Sperre (index.lock)
+
+private let indexLockMessage =
+    "git beendete mit Code 128: fatal: Unable to create '/tmp/repo/.git/index.lock': File exists."
+
+@Suite("GitError — index.lock-Erkennung")
+struct GitErrorIndexLockTests {
+
+    @Test("Typische index.lock-Meldung wird erkannt")
+    func detectsIndexLockMessage() {
+        #expect(GitError.isIndexLockMessage(indexLockMessage))
+    }
+
+    @Test("Andere Fehlermeldungen werden nicht als index.lock erkannt")
+    func ignoresOtherMessages() {
+        #expect(!GitError.isIndexLockMessage("git beendete mit Code 128: fatal: not a git repository"))
+        #expect(!GitError.isIndexLockMessage("fatal: Unable to create 'x/HEAD.lock': File exists."))
+        #expect(!GitError.isIndexLockMessage("index.lock: Permission denied"))
+    }
+
+    @Test("indexLockInUse hat eine nicht-leere Fehlermeldung")
+    func indexLockInUseDescription() {
+        #expect(GitError.indexLockInUse.errorDescription?.isEmpty == false)
+    }
+}
+
+@Suite("GitRunner — Umgebung")
+struct GitRunnerEnvironmentTests {
+
+    @Test("GIT_OPTIONAL_LOCKS=0 wird an git-Prozesse weitergegeben")
+    func optionalLocksDisabled() async throws {
+        let result = try await GitRunner.shared.run(
+            ["-c", "alias.showlocks=!printenv GIT_OPTIONAL_LOCKS", "showlocks"]
+        )
+        #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "0")
+    }
+}
+
+@Suite("GitService — removeStaleIndexLock")
+struct GitServiceIndexLockTests {
+
+    let repoURL: URL
+    var lockURL: URL { repoURL.appendingPathComponent(".git/index.lock") }
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lock-\(UUID().uuidString)", isDirectory: true)
+        try sh("git", "init", repoURL.path)
+    }
+
+    @Test("Ohne Sperrdatei wird nichts gelöscht und false geliefert")
+    func noLockReturnsFalse() async throws {
+        let removed = try await GitService(repositoryPath: repoURL).removeStaleIndexLock()
+        #expect(removed == false)
+    }
+
+    @Test("Verwaiste Sperrdatei wird gelöscht")
+    func removesStaleLock() async throws {
+        try Data().write(to: lockURL)
+
+        let removed = try await GitService(repositoryPath: repoURL).removeStaleIndexLock()
+
+        #expect(removed)
+        #expect(!FileManager.default.fileExists(atPath: lockURL.path))
+    }
+
+    @Test("Von einem Prozess gehaltene Sperrdatei wird nicht gelöscht")
+    func keepsLockInUse() async throws {
+        try Data().write(to: lockURL)
+        // Hält die Datei offen wie ein laufender git-Prozess.
+        let handle = try FileHandle(forReadingFrom: lockURL)
+        defer { try? handle.close() }
+
+        await #expect(throws: GitError.self) {
+            _ = try await GitService(repositoryPath: repoURL).removeStaleIndexLock()
+        }
+        #expect(FileManager.default.fileExists(atPath: lockURL.path))
+    }
+
+    @Test("Danach funktioniert ein schreibender git-Befehl wieder")
+    func gitWorksAfterRemoval() async throws {
+        try Data().write(to: lockURL)
+        let before = try await GitRunner.shared.run(["add", "-A"], workingDirectory: repoURL)
+        #expect(before.exitCode != 0)
+
+        _ = try await GitService(repositoryPath: repoURL).removeStaleIndexLock()
+
+        let after = try await GitRunner.shared.run(["add", "-A"], workingDirectory: repoURL)
+        #expect(after.exitCode == 0)
+    }
+}
+
+@Suite("RepositoryViewModel — Index-Sperre")
+@MainActor
+struct RepositoryViewModelIndexLockTests {
+
+    let repoURL: URL
+    let bookmark: RepositoryBookmark
+    var lockURL: URL { repoURL.appendingPathComponent(".git/index.lock") }
+
+    init() throws {
+        repoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vmlock-\(UUID().uuidString)", isDirectory: true)
+        try sh("git", "init", repoURL.path)
+        bookmark = RepositoryBookmark(name: "Test", path: repoURL)
+    }
+
+    @Test("hasIndexLockConflict ist nur bei index.lock-Meldung true")
+    func conflictFlag() {
+        let vm = RepositoryViewModel(repository: bookmark)
+        #expect(!vm.hasIndexLockConflict)
+
+        vm.remoteStatusMessage = "git beendete mit Code 1: fatal: etwas anderes"
+        #expect(!vm.hasIndexLockConflict)
+
+        vm.remoteStatusMessage = indexLockMessage
+        #expect(vm.hasIndexLockConflict)
+    }
+
+    @Test("removeIndexLock löscht die Sperre und räumt die Fehlermeldung weg")
+    func removeClearsMessage() async throws {
+        try Data().write(to: lockURL)
+        let vm = RepositoryViewModel(repository: bookmark)
+        vm.remoteStatusMessage = indexLockMessage
+
+        await vm.removeIndexLock()
+
+        #expect(vm.remoteStatusMessage == nil)
+        #expect(!vm.hasIndexLockConflict)
+        #expect(!FileManager.default.fileExists(atPath: lockURL.path))
+    }
+
+    @Test("removeIndexLock zeigt eine Meldung, wenn die Sperre noch gehalten wird")
+    func removeReportsLockInUse() async throws {
+        try Data().write(to: lockURL)
+        let handle = try FileHandle(forReadingFrom: lockURL)
+        defer { try? handle.close() }
+        let vm = RepositoryViewModel(repository: bookmark)
+        vm.remoteStatusMessage = indexLockMessage
+
+        await vm.removeIndexLock()
+
+        #expect(vm.remoteStatusMessage == GitError.indexLockInUse.errorDescription)
+        #expect(FileManager.default.fileExists(atPath: lockURL.path))
+    }
+}
+
 // MARK: - CommitSearchCriteriaTests
 
 @Suite("CommitSearchCriteria")

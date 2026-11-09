@@ -43,6 +43,18 @@
     git-Konfiguration (z.B. Credential-Helper oder SSH-Agent).
 </p>
 
+<h3>Fehlerbehebungen</h3>
+<ul>
+    <li>Die Fehlermeldung „Unable to create '…/.git/index.lock': File exists" trat auf,
+        wenn die Hintergrund-Aktualisierung (<code>git status</code>) gleichzeitig mit
+        einer anderen Git-Aktion lief — behoben: reine Lesebefehle legen keine
+        Sperrdatei mehr an (<code>GIT_OPTIONAL_LOCKS=0</code>).</li>
+    <li>Bleibt eine Sperrdatei trotzdem verwaist zurück (z.B. nach einem abgebrochenen
+        Git-Prozess), erscheint neben der Fehlermeldung der Button
+        <strong>„Sperre aufheben"</strong>. Er löscht die Datei nur, wenn sie von keinem
+        laufenden Prozess mehr verwendet wird.</li>
+</ul>
+
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="v1_6">Version 1.6</h2>
 

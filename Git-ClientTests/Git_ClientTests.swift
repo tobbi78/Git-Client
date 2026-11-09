@@ -3913,6 +3913,51 @@ struct CommandPaletteResultTests {
 
 // MARK: - TerminalService — Auswahl der Terminal-App
 
+@Suite("GitService — Web—URL des Remotes")
+struct RemoteWebURLTests {
+    private func web(_ remote: String) -> String? {
+        GitService.webURL(fromRemoteURL: remote)?.absoluteString
+    }
+
+    @Test("HTTPS-URL: .git-Endung wird entfernt")
+    func https() {
+        #expect(web("https://github.com/user/repo.git") == "https://github.com/user/repo")
+    }
+
+    @Test("HTTPS-URL: Zugangsdaten werden entfernt")
+    func credentials() {
+        #expect(web("https://user:secret@gitlab.com/group/repo.git") == "https://gitlab.com/group/repo")
+    }
+
+    @Test("HTTPS-URL: Port bleibt erhalten")
+    func httpsPort() {
+        #expect(web("https://git.example.com:8443/team/repo.git") == "https://git.example.com:8443/team/repo")
+    }
+
+    @Test("scp-artige SSH-Kurzform wird zu https")
+    func scpLike() {
+        #expect(web("git@github.com:user/repo.git") == "https://github.com/user/repo")
+    }
+
+    @Test("ssh://-URL: SSH-Port wird verworfen")
+    func sshURL() {
+        #expect(web("ssh://git@git.example.com:2222/team/repo.git") == "https://git.example.com/team/repo")
+    }
+
+    @Test("Abschließender Slash und Zeilenumbruch werden entfernt")
+    func trailingSlashAndNewline() {
+        #expect(web("https://github.com/user/repo/\n") == "https://github.com/user/repo")
+    }
+
+    @Test("Lokale Pfade und leere Eingaben ergeben nil")
+    func localPaths() {
+        #expect(web("/Users/foo/repo.git") == nil)
+        #expect(web("../repo") == nil)
+        #expect(web("file:///Users/foo/repo.git") == nil)
+        #expect(web("") == nil)
+    }
+}
+
 @Suite("TerminalService — Auswahl der Terminal-App")
 struct TerminalServiceTests {
 

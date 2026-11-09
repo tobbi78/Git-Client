@@ -86,6 +86,17 @@ struct MainWindowView: View {
                 .help("Repository-Ordner in der Terminal-App öffnen")
             }
             ToolbarItem(placement: .primaryAction) {
+                Button("Remote im Browser öffnen", systemImage: "safari") {
+                    Task {
+                        if let url = await vm?.remoteWebURL() {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+                .disabled(!(vm?.hasRemote ?? false))
+                .help("Webseite des Remotes (origin) im Browser öffnen")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button("Neu laden", systemImage: "arrow.clockwise") {
                     Task { await vm?.load() }
                 }

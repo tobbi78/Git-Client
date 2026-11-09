@@ -167,6 +167,63 @@ actor GitService {
         (try? await remoteName()) ?? nil != nil
     }
 
+    /// Web-URL des Remotes (z.B. `https://github.com/user/repo`) zum Öffnen im Browser.
+    /// `nil`, wenn kein Remote konfiguriert ist oder sich aus dessen URL keine
+    /// Webseite ableiten lässt (z.B. lokaler Pfad als Remote).
+    func remoteWebURL() async throws -> URL? {
+        guard let remote = try await remoteName() else { return nil }
+        let output = try await runner.runOrThrow(["remote", "get-url", remote], workingDirectory: repositoryPath)
+        return Self.webURL(fromRemoteURL: output)
+    }
+
+    /// Leitet aus einer Git-Remote-URL die Browser-URL ab. Unterstützt https/http,
+    /// ssh://, git:// und die scp-artige Kurzform `git@host:pfad/repo.git`.
+    /// Zugangsdaten, SSH-Ports und die `.git`-Endung werden entfernt.
+    nonisolated static func webURL(fromRemoteURL remoteURL: String) -> URL? {
+        let trimmed = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        var scheme = "https"
+        var host: String
+        var port: Int? = nil
+        var path: String
+
+        if trimmed.contains("://") {
+            guard let components = URLComponents(string: trimmed),
+                  let urlScheme = components.scheme?.lowercased(),
+                  ["http", "https", "ssh", "git", "git+ssh", "ssh+git"].contains(urlScheme),
+                  let urlHost = components.host, !urlHost.isEmpty else { return nil }
+            host = urlHost
+            path = components.path
+            // Nur bei HTTP(S) gehört der Port zur Web-URL; ein SSH-/Git-Port nicht.
+            if urlScheme == "http" || urlScheme == "https" {
+                scheme = urlScheme
+                port = components.port
+            }
+        } else {
+            // scp-artig: [user@]host:pfad — vor dem ':' darf kein '/' stehen,
+            // sonst ist es ein lokaler Pfad.
+            guard let colon = trimmed.firstIndex(of: ":"),
+                  !trimmed[..<colon].contains("/") else { return nil }
+            let hostPart = trimmed[..<colon]
+            host = String(hostPart.split(separator: "@", omittingEmptySubsequences: false).last ?? hostPart)
+            path = String(trimmed[trimmed.index(after: colon)...])
+            guard !host.isEmpty else { return nil }
+        }
+
+        while path.hasPrefix("/") { path.removeFirst() }
+        while path.hasSuffix("/") { path.removeLast() }
+        if path.hasSuffix(".git") { path.removeLast(4) }
+        guard !path.isEmpty else { return nil }
+
+        var result = URLComponents()
+        result.scheme = scheme
+        result.host = host
+        result.port = port
+        result.path = "/" + path
+        return result.url
+    }
+
     /// Holt den aktuellen Stand vom Server. Aktualisiert die Remote-Tracking-Refs,
     /// damit der ahead/behind-Vergleich korrekt ist.
     ///

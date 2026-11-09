@@ -311,6 +311,20 @@ final class RepositoryViewModel {
         }
     }
 
+    // MARK: - Remote im Browser
+
+    /// Liefert die Web-URL des Remotes zum Öffnen im Browser. Meldet über
+    /// `remoteStatusMessage`, wenn sich keine Webseite ableiten lässt.
+    func remoteWebURL() async -> URL? {
+        do {
+            if let url = try await service.remoteWebURL() { return url }
+            remoteStatusMessage = "Für den Remote lässt sich keine Webseite ermitteln."
+        } catch {
+            remoteStatusMessage = error.localizedDescription
+        }
+        return nil
+    }
+
     // MARK: - Branch-Checkout
 
     /// Prüft auf unkommittete Änderungen; wechselt direkt oder löst den Warndialog aus.

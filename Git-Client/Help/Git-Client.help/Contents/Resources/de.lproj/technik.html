@@ -157,11 +157,53 @@ struct GitResult {
         <td><code>CommitDiff</code></td>
     </tr>
     <tr>
+        <td><code>fileHistory(path:rev:limit:)</code></td>
+        <td><code>git log --follow -M --name-status -&lt;limit&gt; &lt;rev&gt; -- &lt;pfad&gt;</code></td>
+        <td><code>[FileHistoryEntry]</code></td>
+    </tr>
+    <tr>
+        <td><code>fileDiff(sha:path:oldPath:)</code></td>
+        <td><code>git show --format= --patch -M --diff-merges=first-parent &lt;sha&gt; -- &lt;alt&gt; &lt;neu&gt;</code></td>
+        <td><code>DiffFile?</code></td>
+    </tr>
+    <tr>
+        <td><code>commitPosition(sha:)</code></td>
+        <td><code>git rev-list --all --date-order</code></td>
+        <td><code>Int?</code> (Index in der Hauptliste)</td>
+    </tr>
+    <tr>
         <td><code>aheadBehind()</code></td>
         <td><code>git rev-list --left-right --count @{upstream}...HEAD</code></td>
         <td><code>(ahead: Int, behind: Int)?</code></td>
     </tr>
 </table>
+
+<h4>Datei-Historie: Paginierung ohne <code>--skip</code></h4>
+<p>
+    <code>FileHistoryParser</code> liest <code>git log --follow --name-status</code>;
+    jeder Datensatz beginnt mit dem Marker <code>\u{1d}</code>, danach folgt das Format
+    von <code>GitLogParser</code> (unverändert wiederverwendet) und die Status-Zeile
+    (<code>M</code>, <code>A</code>, <code>D</code>, <code>R…</code>). Bei Merge-Commits
+    ohne Status-Zeile wird der Pfad von neu nach alt weitergereicht.
+</p>
+<p>
+    Die Folgeseiten werden <strong>nicht</strong> mit <code>--skip</code> geladen:
+    <code>--follow</code> erkennt Umbenennungen beim Diffen, übersprungene Commits werden
+    aber nicht diffed — eine Umbenennung vor der Seitengrenze ginge verloren und die Seite
+    bliebe leer. Stattdessen startet die nächste Seite bei <code>&lt;letzter Eintrag&gt;^@</code>
+    (alle Eltern) mit dem Pfad vor dem letzten Eintrag (<code>FileHistoryEntry.pathBefore</code>).
+    <code>--diff-merges=first-parent</code> beim Einzel-Diff verhindert den kombinierten
+    Merge-Diff, den <code>DiffParser</code> nicht versteht.
+</p>
+
+<h4>Sprung zu nicht geladenen Commits</h4>
+<p>
+    <code>RepositoryViewModel.selectCommit(bySha:)</code> ermittelt für einen nicht
+    geladenen Commit per <code>commitPosition(sha:)</code> dessen Index (gleiche
+    Reihenfolge wie <code>loadCommits</code>: <code>--all --date-order</code>) und lädt in
+    <em>einer</em> Anfrage bis zur nächsten Seitengrenze nach — der Graph wird nur einmal
+    neu aufgebaut.
+</p>
 
 <h4>Annotierte Tags korrekt auflösen</h4>
 <p>

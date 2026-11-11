@@ -30,6 +30,7 @@
         <li><a href="#sync">Mit dem Server synchronisieren</a></li>
         <li><a href="#diff">Diff ansehen</a></li>
         <li><a href="#blame">Blame-Ansicht</a></li>
+        <li><a href="#dateihistorie">Datei-Historie</a></li>
         <li><a href="#statistiken">Statistiken</a></li>
         <li><a href="#reload">Neu laden</a></li>
         <li><a href="#autorefresh">Automatische Erkennung neuer Commits</a></li>
@@ -413,8 +414,11 @@
 <p>
     Ein <strong>Rechtsklick</strong> auf eine Datei in der Dateiliste des Commit-Details
     bietet zusätzliche Aktionen an — <strong>„Blame anzeigen"</strong> (siehe nächster
-    Abschnitt) und <strong>„Im Finder zeigen"</strong>. Beide sind nicht verfügbar für
-    gelöschte Dateien, da es dafür keine aktuelle Datei im Arbeitsverzeichnis gibt.
+    Abschnitt), <strong>„Historie anzeigen"</strong> (siehe
+    <a href="#dateihistorie">Datei-Historie</a>) und <strong>„Im Finder zeigen"</strong>.
+    Blame und „Im Finder zeigen" sind nicht verfügbar für gelöschte Dateien, da es dafür
+    keine aktuelle Datei im Arbeitsverzeichnis gibt; die Historie ist auch für gelöschte
+    Dateien verfügbar.
 </p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -440,7 +444,38 @@
 <p>
     Ein <strong>Klick auf eine Commit-SHA</strong> in der Blame-Ansicht springt in der
     Hauptliste direkt zu diesem Commit. Ein <strong>Rechtsklick</strong> auf eine
-    Zeile bietet „SHA kopieren" an.
+    Zeile bietet „SHA kopieren" und „Datei-Historie anzeigen" an. Der Button
+    <strong>„Historie"</strong> in der Kopfzeile öffnet die Datei-Historie der ganzen
+    Datei.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="dateihistorie">Datei-Historie</h2>
+
+<p>
+    Die Datei-Historie zeigt alle Commits, die <strong>eine einzelne Datei</strong>
+    geändert haben — ausgehend vom aktuell ausgewählten Commit und auch über
+    <strong>Umbenennungen</strong> hinweg.
+</p>
+
+<h3>Öffnen</h3>
+<ul>
+    <li>Rechtsklick auf eine Datei im Commit-Detail → <strong>„Historie anzeigen"</strong>
+        (auch für gelöschte Dateien).</li>
+    <li>In der Blame-Ansicht: Button <strong>„Historie"</strong> oder Rechtsklick auf eine
+        Zeile → <strong>„Datei-Historie anzeigen"</strong>.</li>
+</ul>
+
+<h3>Bedienung</h3>
+<p>
+    Links stehen die Commits (Betreff, Autor, Datum, Kurz-SHA, Art der Änderung; bei einer
+    Umbenennung zusätzlich „alter → neuer Pfad"). Rechts erscheint der <strong>Diff nur
+    dieser Datei</strong> für den gewählten Eintrag. Beim Scrollen ans Listenende werden
+    weitere Einträge nachgeladen. Ein <strong>Doppelklick</strong> auf einen Eintrag oder
+    der Button <strong>„Zum Commit springen"</strong> wählt den Commit in der Hauptliste
+    aus und schließt das Fenster. Liegt der Commit weiter hinten, als bisher geladen,
+    wird die Liste dafür automatisch nachgeladen; eine aktive Suche wird dabei
+    zurückgesetzt.
 </p>
 
 <!-- ═══════════════════════════════════════════════════════════ -->

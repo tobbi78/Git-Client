@@ -127,6 +127,28 @@ final class RepositoryViewModel {
     var isBlameLoading = false
     var blameError: String? = nil
 
+    // MARK: - Datei-Historie
+    var showFileHistorySheet = false
+    /// true → Sheet hängt am Blame-Sheet (verschachtelt), sonst an der Diff-Ansicht.
+    var fileHistoryPresentedFromBlame = false
+    var fileHistoryPath: String? = nil
+    private var fileHistoryStartSha: String? = nil
+    private(set) var fileHistoryEntries: [FileHistoryEntry] = []
+    var isFileHistoryLoading = false
+    var fileHistoryError: String? = nil
+    private(set) var fileHistoryCanLoadMore = true
+    private(set) var fileHistoryDiff: DiffFile? = nil
+    var isFileHistoryDiffLoading = false
+    var selectedFileHistorySha: String? = nil {
+        didSet {
+            guard selectedFileHistorySha != oldValue else { return }
+            Task { await loadFileHistoryDiff() }
+        }
+    }
+
+    /// true, während ein nicht geladener Commit gesucht und nachgeladen wird.
+    var isRevealingCommit = false
+
     // Expliziter Scroll-Trigger: erhöht sich bei jedem Branch-/Tag-Klick,
     // auch wenn der Commit bereits ausgewählt war (gleiche ID).
     private(set) var scrollRequestToken = 0
@@ -193,6 +215,12 @@ final class RepositoryViewModel {
 
     /// Lädt die nächste Seite nach — normale Liste oder Suchtreffer, je nach Modus.
     func loadMore() async {
+        await loadMore(limit: pageSize)
+    }
+
+    /// Wie `loadMore()`, aber mit frei wählbarer Seitengröße (für den Sprung zu einem
+    /// weit hinten liegenden Commit: eine Anfrage, ein Graph-Aufbau).
+    private func loadMore(limit: Int) async {
         if isSearchActive {
             guard searchCanLoadMore, !isSearching else { return }
             await performSearch(reset: false)
@@ -202,14 +230,14 @@ final class RepositoryViewModel {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let next = try await service.loadCommits(limit: pageSize, skip: pagedCount)
+            let next = try await service.loadCommits(limit: limit, skip: pagedCount)
             pagedCount += next.count
-            if next.count < pageSize { canLoadMore = false }
+            if next.count < limit { canLoadMore = false }
             // Deduplizieren: Branch-Tips, die bereits per loadMissingBranchTips injiziert wurden
             let existing = Set(commits.map(\.sha))
             let unique = next.filter { !existing.contains($0.sha) }
             guard !unique.isEmpty else {
-                if next.count < pageSize { canLoadMore = false }
+                if next.count < limit { canLoadMore = false }
                 return
             }
             commits.append(contentsOf: unique)
@@ -516,17 +544,55 @@ final class RepositoryViewModel {
                   ?? pool.first(where: { $0.sha.hasPrefix(sha) })
         guard let commit else {
             // Während eines Ladevorgangs kann der Stand noch veraltet sein — kein Fehler.
-            guard !isLoading else { return }
-            branchJumpMessage = "Commit dieses Branches ist nicht in den geladenen Commits."
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                branchJumpMessage = nil
-            }
+            guard !isLoading, !isRevealingCommit else { return }
+            Task { await revealCommit(sha: sha) }
             return
         }
         selectedCommitID = commit.sha
         scrollTargetID = commit.sha
         scrollRequestToken &+= 1
+    }
+
+    /// Lädt die Commit-Liste so weit nach, dass `sha` enthalten ist, und wählt ihn dann
+    /// aus. Die Position kommt aus `rev-list` in derselben Reihenfolge wie die Hauptliste.
+    private func revealCommit(sha: String) async {
+        let label = String(sha.prefix(7))
+        isRevealingCommit = true
+        branchJumpMessage = "Commit \(label) wird gesucht…"
+        defer { isRevealingCommit = false }
+
+        do {
+            guard let position = try await service.commitPosition(sha: sha) else {
+                showJumpMessage("Commit \(label) ist von keinem Branch oder Tag aus erreichbar.")
+                return
+            }
+            // Eine aktive Suche würde den Commit ausblenden → zurücksetzen.
+            if isSearchActive { updateSearch(CommitSearchCriteria()) }
+            if position >= pagedCount {
+                let size = max(pageSize, 1)
+                let target = ((position + 1 + size - 1) / size) * size
+                await loadMore(limit: target - pagedCount)
+            }
+            if let found = commits.first(where: { $0.sha == sha })
+                ?? commits.first(where: { $0.sha.hasPrefix(sha) }) {
+                branchJumpMessage = nil
+                selectedCommitID = found.sha
+                scrollTargetID = found.sha
+                scrollRequestToken &+= 1
+            } else {
+                showJumpMessage("Commit \(label) konnte nicht geladen werden.")
+            }
+        } catch {
+            showJumpMessage("Commit \(label) konnte nicht gesucht werden: \(error.localizedDescription)")
+        }
+    }
+
+    private func showJumpMessage(_ text: String) {
+        branchJumpMessage = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if branchJumpMessage == text { branchJumpMessage = nil }
+        }
     }
 
     private func loadDiff(for sha: String) async {
@@ -562,5 +628,79 @@ final class RepositoryViewModel {
         } catch {
             blameError = error.localizedDescription
         }
+    }
+
+    // MARK: - Datei-Historie
+
+    /// Öffnet die Datei-Historie für `path`, ausgehend vom aktuell gewählten Commit.
+    func requestFileHistory(path: String, fromBlame: Bool = false) {
+        guard let sha = selectedCommitID else { return }
+        fileHistoryPath = path
+        fileHistoryStartSha = sha
+        fileHistoryEntries = []
+        fileHistoryError = nil
+        fileHistoryCanLoadMore = true
+        fileHistoryDiff = nil
+        selectedFileHistorySha = nil
+        fileHistoryPresentedFromBlame = fromBlame
+        showFileHistorySheet = true
+        Task { await loadFileHistoryPage() }
+    }
+
+    /// Lädt die nächste Seite der Datei-Historie (Infinite Scrolling).
+    func loadMoreFileHistory() async {
+        await loadFileHistoryPage()
+    }
+
+    private func loadFileHistoryPage() async {
+        guard let path = fileHistoryPath,
+              let sha = fileHistoryStartSha,
+              fileHistoryCanLoadMore, !isFileHistoryLoading else { return }
+        isFileHistoryLoading = true
+        defer { isFileHistoryLoading = false }
+        let size = max(pageSize, 1)
+        do {
+            // Folgeseiten starten bei den Eltern des letzten Eintrags (siehe GitService).
+            let page: [FileHistoryEntry]
+            if let last = fileHistoryEntries.last {
+                page = try await service.fileHistory(
+                    path: last.pathBefore, rev: "\(last.id)^@", limit: size)
+            } else {
+                page = try await service.fileHistory(path: path, rev: sha, limit: size)
+            }
+            // Zwischenzeitlich wurde eine andere Historie geöffnet → Ergebnis verwerfen.
+            guard fileHistoryPath == path, fileHistoryStartSha == sha else { return }
+            let existing = Set(fileHistoryEntries.map(\.id))
+            fileHistoryEntries.append(contentsOf: page.filter { !existing.contains($0.id) })
+            if page.count < size { fileHistoryCanLoadMore = false }
+            if selectedFileHistorySha == nil {
+                selectedFileHistorySha = fileHistoryEntries.first?.id
+            }
+        } catch {
+            fileHistoryError = error.localizedDescription
+            fileHistoryCanLoadMore = false
+        }
+    }
+
+    private func loadFileHistoryDiff() async {
+        guard let sha = selectedFileHistorySha,
+              let entry = fileHistoryEntries.first(where: { $0.id == sha }) else {
+            fileHistoryDiff = nil
+            return
+        }
+        isFileHistoryDiffLoading = true
+        fileHistoryDiff = nil
+        let diff = try? await service.fileDiff(sha: sha, path: entry.path, oldPath: entry.oldPath)
+        // Veraltete Antwort (Nutzer hat inzwischen anders gewählt) nicht übernehmen.
+        guard selectedFileHistorySha == sha else { return }
+        fileHistoryDiff = diff
+        isFileHistoryDiffLoading = false
+    }
+
+    /// Schließt Historie (und ggf. das darunterliegende Blame-Sheet) und springt zum Commit.
+    func jumpToCommitFromFileHistory(sha: String) {
+        showFileHistorySheet = false
+        showBlameSheet = false
+        selectCommit(bySha: sha)
     }
 }

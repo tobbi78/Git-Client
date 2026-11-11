@@ -684,9 +684,14 @@ struct MainWindowView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: Self.rowSpacing) {
-                    // Hinweis, wenn ein Branch-Tip nicht in der geladenen Liste ist
+                    // Hinweis beim Sprung zu einem (noch) nicht geladenen Commit
                     if let msg = vm.branchJumpMessage {
-                        Text(msg)
+                        HStack(spacing: 6) {
+                            if vm.isRevealingCommit {
+                                ProgressView().controlSize(.mini)
+                            }
+                            Text(msg)
+                        }
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(8)
@@ -786,6 +791,25 @@ struct MainWindowView: View {
 
     // MARK: - Detail / Diff
 
+    private var fileHistorySheet: some View {
+        FileHistoryView(
+            filePath: vm?.fileHistoryPath,
+            commitShortSha: vm?.selectedCommit?.shortSha,
+            entries: vm?.fileHistoryEntries ?? [],
+            isLoading: vm?.isFileHistoryLoading ?? false,
+            canLoadMore: vm?.fileHistoryCanLoadMore ?? false,
+            error: vm?.fileHistoryError,
+            diff: vm?.fileHistoryDiff,
+            isDiffLoading: vm?.isFileHistoryDiffLoading ?? false,
+            selectedSha: Binding(
+                get: { vm?.selectedFileHistorySha },
+                set: { vm?.selectedFileHistorySha = $0 }
+            ),
+            onSelectCommit: { sha in vm?.jumpToCommitFromFileHistory(sha: sha) },
+            onLoadMore: { Task { await vm?.loadMoreFileHistory() } }
+        )
+    }
+
     @ViewBuilder
     private var commitDetail: some View {
         if let commit = vm?.selectedCommit {
@@ -799,8 +823,20 @@ struct MainWindowView: View {
                         repository.path.appendingPathComponent(path).path,
                         inFileViewerRootedAtPath: repository.path.path
                     )
-                }
+                },
+                onFileHistoryRequest: { path in vm?.requestFileHistory(path: path) }
             )
+            // Ein Sprung zu einem weit hinten liegenden Commit setzt eine aktive Suche
+            // zurück → das Suchfeld nachziehen.
+            .onChange(of: vm?.searchCriteria) { _, new in
+                if let new, new != criteria { criteria = new }
+            }
+            .sheet(isPresented: Binding(
+                get: { vm?.showFileHistorySheet == true && vm?.fileHistoryPresentedFromBlame == false },
+                set: { vm?.showFileHistorySheet = $0 }
+            )) {
+                fileHistorySheet
+            }
             .sheet(isPresented: Binding(
                 get: { vm?.showBlameSheet ?? false },
                 set: { vm?.showBlameSheet = $0 }
@@ -814,8 +850,21 @@ struct MainWindowView: View {
                     onSelectCommit: { sha in
                         vm?.selectCommit(bySha: sha)
                         vm?.showBlameSheet = false
+                    },
+                    onShowFileHistory: {
+                        if let path = vm?.blameFilePath {
+                            vm?.requestFileHistory(path: path, fromBlame: true)
+                        }
                     }
                 )
+                // Verschachteltes Sheet: ein Wechsel zwischen zwei Sheets derselben
+                // Ebene ist auf macOS unzuverlässig.
+                .sheet(isPresented: Binding(
+                    get: { vm?.showFileHistorySheet == true && vm?.fileHistoryPresentedFromBlame == true },
+                    set: { vm?.showFileHistorySheet = $0 }
+                )) {
+                    fileHistorySheet
+                }
             }
         } else {
             ContentUnavailableView(

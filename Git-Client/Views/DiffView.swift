@@ -22,11 +22,11 @@ struct DiffView: View {
     /// Erhält den repo-relativen Pfad (analog zu onBlameRequest).
     var onRevealInFinder: ((String) -> Void)? = nil
 
+    /// Wird aufgerufen, wenn der Nutzer „Historie anzeigen" im Kontextmenü wählt.
+    var onFileHistoryRequest: ((String) -> Void)? = nil
+
     // JIRA-Konfiguration — reagiert automatisch auf Einstellungsänderungen
     @AppStorage(AppSettings.jiraBaseURLKey) private var jiraBaseURL: String = ""
-
-    // Zeilennummern-Anzeige — reagiert automatisch auf Einstellungsänderungen
-    @AppStorage(AppSettings.showDiffLineNumbersKey) private var showLineNumbers: Bool = true
 
     /// Ticket-Matches für den aktuell angezeigten Commit.
     private var jiraTickets: [JiraTicketMatch] {
@@ -200,6 +200,14 @@ struct DiffView: View {
                         Label("Blame anzeigen", systemImage: "clock.arrow.circlepath")
                     }
                 }
+                // Historie auch für gelöschte Dateien (dann über den alten Pfad)
+                if let historyRequest = onFileHistoryRequest {
+                    Button {
+                        historyRequest(file.isDeleted ? file.oldPath : file.newPath)
+                    } label: {
+                        Label("Historie anzeigen", systemImage: "clock")
+                    }
+                }
                 if !file.isDeleted, let revealRequest = onRevealInFinder {
                     Button {
                         revealRequest(file.newPath)
@@ -212,8 +220,18 @@ struct DiffView: View {
         .listStyle(.sidebar)
     }
 
-    private func changeTypeIcon(_ type: DiffFileChangeType) -> String {
-        switch type {
+    private func changeTypeIcon(_ type: DiffFileChangeType) -> String { type.icon }
+
+    private func changeTypeColor(_ type: DiffFileChangeType) -> Color { type.color }
+
+    private func patchView(_ file: DiffFile) -> some View {
+        DiffPatchView(file: file)
+    }
+}
+
+extension DiffFileChangeType {
+    var icon: String {
+        switch self {
         case .added:    return "plus.circle.fill"
         case .deleted:  return "minus.circle.fill"
         case .renamed:  return "arrow.triangle.2.circlepath"
@@ -221,16 +239,25 @@ struct DiffView: View {
         }
     }
 
-    private func changeTypeColor(_ type: DiffFileChangeType) -> Color {
-        switch type {
+    var color: Color {
+        switch self {
         case .added:    return .green
         case .deleted:  return .red
         case .renamed:  return .orange
         case .modified: return .blue
         }
     }
+}
 
-    private func patchView(_ file: DiffFile) -> some View {
+// MARK: - Patch-Darstellung einer Datei (auch von der Datei-Historie genutzt)
+
+struct DiffPatchView: View {
+    let file: DiffFile
+
+    // Zeilennummern-Anzeige — reagiert automatisch auf Einstellungsänderungen
+    @AppStorage(AppSettings.showDiffLineNumbersKey) private var showLineNumbers: Bool = true
+
+    var body: some View {
         // GeometryReader misst die Breite des sichtbaren Panels (außerhalb der
         // ScrollView). Jede Zeile bekommt minWidth: geo.size.width, damit Zeilen-
         // Hintergründe die volle Panel-Breite füllen — auch wenn der Text kürzer ist.

@@ -5507,3 +5507,223 @@ struct FileHistoryIntegrationTests {
         #expect(vm.selectedCommitID == nil)
     }
 }
+
+// MARK: - GitService — authenticatedURL
+
+@Suite("GitService — authenticatedURL")
+struct GitServiceAuthenticatedURLTests {
+
+    @Test("Fügt Benutzer und Passwort in eine HTTPS-URL ein")
+    func injectsCredentials() {
+        let url = GitService.authenticatedURL("https://example.com/repo.git", username: "user", password: "secret")
+        #expect(url == "https://user:secret@example.com/repo.git")
+    }
+
+    @Test("Sonderzeichen im Passwort werden prozentkodiert")
+    func encodesSpecialCharacters() {
+        let url = GitService.authenticatedURL("https://example.com/repo.git", username: "user", password: "p@ss/w")
+        #expect(url.hasPrefix("https://user:"))
+        #expect(url.hasSuffix("@example.com/repo.git"))
+        #expect(!url.contains("p@ss"))
+    }
+
+    @Test("Fehlende oder leere Zugangsdaten lassen die URL unverändert")
+    func leavesURLWithoutCredentials() {
+        let base = "https://example.com/repo.git"
+        #expect(GitService.authenticatedURL(base, username: nil, password: nil) == base)
+        #expect(GitService.authenticatedURL(base, username: "user", password: nil) == base)
+        #expect(GitService.authenticatedURL(base, username: nil, password: "secret") == base)
+        #expect(GitService.authenticatedURL(base, username: "", password: "secret") == base)
+        #expect(GitService.authenticatedURL(base, username: "user", password: "") == base)
+    }
+
+    @Test("Nicht parsebare URL bleibt unverändert")
+    func leavesUnparsableURL() {
+        let bad = "ht tp://exa mple"
+        #expect(GitService.authenticatedURL(bad, username: "u", password: "p") == bad)
+    }
+}
+
+// MARK: - GitService — Remote-Operationen (clone/fetch/fastForward/remoteHeads)
+
+@Suite("GitService — Remote-Operationen")
+struct GitServiceRemoteOperationsTests {
+
+    let bareURL: URL
+    let localURL: URL
+
+    init() throws {
+        let base = FileManager.default.temporaryDirectory
+        bareURL = base.appendingPathComponent("bare-\(UUID().uuidString).git", isDirectory: true)
+        localURL = base.appendingPathComponent("local-\(UUID().uuidString)", isDirectory: true)
+
+        try sh("git", "init", "--bare", bareURL.path)
+        try sh("git", "clone", bareURL.path, localURL.path)
+        try sh("git", "-C", localURL.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", localURL.path, "config", "user.name", "T")
+        try "x".write(to: localURL.appendingPathComponent("init.txt"), atomically: true, encoding: .utf8)
+        try sh("git", "-C", localURL.path, "add", ".")
+        try sh("git", "-C", localURL.path, "commit", "-m", "Init")
+        try sh("git", "-C", localURL.path, "push", "-u", "origin", "HEAD")
+    }
+
+    /// Simuliert einen fremden Push, von dem `localURL` noch nichts weiß.
+    private func pushForeignCommit() throws {
+        let otherURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("other-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: otherURL) }
+        try sh("git", "clone", bareURL.path, otherURL.path)
+        try sh("git", "-C", otherURL.path, "config", "user.email", "o@o.com")
+        try sh("git", "-C", otherURL.path, "config", "user.name", "O")
+        try "y".write(to: otherURL.appendingPathComponent("foreign.txt"), atomically: true, encoding: .utf8)
+        try sh("git", "-C", otherURL.path, "add", ".")
+        try sh("git", "-C", otherURL.path, "commit", "-m", "Fremder Commit")
+        try sh("git", "-C", otherURL.path, "push")
+    }
+
+    private func cleanup(_ urls: URL...) {
+        for u in urls { try? FileManager.default.removeItem(at: u) }
+        try? FileManager.default.removeItem(at: bareURL)
+        try? FileManager.default.removeItem(at: localURL)
+    }
+
+    // MARK: clone
+
+    @Test("clone klont ein Repository mit seiner Historie")
+    func cloneCopiesHistory() async throws {
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clone-\(UUID().uuidString)", isDirectory: true)
+        defer { cleanup(target) }
+
+        let svc = GitService(repositoryPath: target)
+        try await svc.clone(remoteURL: bareURL.path, to: target, username: nil, password: nil)
+
+        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent(".git").path))
+        let commits = try await svc.loadCommits()
+        #expect(commits.count == 1)
+        #expect(try await svc.remoteName() == "origin")
+    }
+
+    @Test("clone wirft bei nicht existierender Quelle")
+    func cloneFailsForMissingSource() async throws {
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("clone-\(UUID().uuidString)", isDirectory: true)
+        defer { cleanup(target) }
+
+        let svc = GitService(repositoryPath: target)
+        await #expect(throws: (any Error).self) {
+            try await svc.clone(remoteURL: "/nonexistent/\(UUID().uuidString)", to: target, username: nil, password: nil)
+        }
+    }
+
+    // MARK: fetch
+
+    @Test("fetch ohne URL holt fremde Commits über den konfigurierten Remote")
+    func fetchViaRemoteName() async throws {
+        defer { cleanup() }
+        try pushForeignCommit()
+
+        let svc = GitService(repositoryPath: localURL)
+        try await svc.fetch(remoteURL: nil, username: nil, password: nil)
+
+        #expect(try await svc.aheadBehind()?.behind == 1)
+    }
+
+    @Test("fetch mit expliziter URL holt fremde Commits in die Remote-Tracking-Refs")
+    func fetchViaExplicitURL() async throws {
+        defer { cleanup() }
+        try pushForeignCommit()
+
+        let svc = GitService(repositoryPath: localURL)
+        try await svc.fetch(remoteURL: bareURL.path, username: nil, password: nil)
+
+        #expect(try await svc.aheadBehind()?.behind == 1)
+    }
+
+    @Test("fetch ohne Remote tut nichts und wirft nicht")
+    func fetchWithoutRemoteIsNoop() async throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent("noremote-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { cleanup(repo) }
+        try sh("git", "-C", repo.path, "init")
+
+        try await GitService(repositoryPath: repo).fetch(remoteURL: nil, username: nil, password: nil)
+    }
+
+    // MARK: fastForward
+
+    @Test("fastForward übernimmt gefetchte Upstream-Commits")
+    func fastForwardAdvancesBranch() async throws {
+        defer { cleanup() }
+        try pushForeignCommit()
+
+        let svc = GitService(repositoryPath: localURL)
+        try await svc.fetch(remoteURL: nil, username: nil, password: nil)
+        try await svc.fastForward()
+
+        #expect(try await svc.aheadBehind()?.behind == 0)
+        #expect(FileManager.default.fileExists(atPath: localURL.appendingPathComponent("foreign.txt").path))
+    }
+
+    @Test("fastForward wirft ohne konfigurierten Upstream")
+    func fastForwardFailsWithoutUpstream() async throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent("noupstream-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { cleanup(repo) }
+        try sh("git", "-C", repo.path, "init")
+        try sh("git", "-C", repo.path, "config", "user.email", "t@t.com")
+        try sh("git", "-C", repo.path, "config", "user.name", "T")
+        try sh("git", "-C", repo.path, "commit", "--allow-empty", "-m", "Init")
+
+        let svc = GitService(repositoryPath: repo)
+        await #expect(throws: (any Error).self) {
+            try await svc.fastForward()
+        }
+    }
+
+    // MARK: remoteHeads
+
+    @Test("remoteHeads ohne URL liefert den Server-Stand über den konfigurierten Remote")
+    func remoteHeadsViaRemoteName() async throws {
+        defer { cleanup() }
+        let svc = GitService(repositoryPath: localURL)
+        let branch = try #require(await svc.currentBranch())
+        let headSHA = try await GitRunner.shared.runOrThrow(
+            ["rev-parse", "HEAD"], workingDirectory: localURL
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let heads = try await svc.remoteHeads(remoteURL: nil, username: nil, password: nil)
+
+        #expect(heads["refs/heads/\(branch)"] == headSHA)
+    }
+
+    @Test("remoteHeads mit URL sieht fremde Pushes, ohne lokal etwas zu fetchen")
+    func remoteHeadsViaExplicitURL() async throws {
+        defer { cleanup() }
+        let svc = GitService(repositoryPath: localURL)
+        let branch = try #require(await svc.currentBranch())
+        let before = try await svc.remoteHeads(remoteURL: bareURL.path, username: nil, password: nil)
+
+        try pushForeignCommit()
+        let after = try await svc.remoteHeads(remoteURL: bareURL.path, username: nil, password: nil)
+
+        #expect(after["refs/heads/\(branch)"] != before["refs/heads/\(branch)"])
+        #expect(try await svc.aheadBehind()?.behind == 0)
+    }
+
+    @Test("remoteHeads wirft ohne Remote und ohne URL")
+    func remoteHeadsFailsWithoutRemote() async throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent("noremote-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { cleanup(repo) }
+        try sh("git", "-C", repo.path, "init")
+
+        let svc = GitService(repositoryPath: repo)
+        await #expect(throws: GitError.self) {
+            try await svc.remoteHeads(remoteURL: nil, username: nil, password: nil)
+        }
+    }
+}

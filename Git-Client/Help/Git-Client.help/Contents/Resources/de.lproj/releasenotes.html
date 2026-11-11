@@ -36,6 +36,28 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="v1_8">Version 1.8</h2>
 
+<h3>Neu: Datei-Historie</h3>
+<ul>
+    <li>Rechtsklick auf eine Datei in der Dateiliste des Commit-Details →
+        <strong>„Historie anzeigen"</strong>: zeigt alle Commits, die diese Datei
+        geändert haben — ausgehend vom ausgewählten Commit und auch über
+        Umbenennungen hinweg. Rechts erscheint der Diff genau dieser Datei im
+        gewählten Commit. Die Historie wird beim Scrollen seitenweise nachgeladen.</li>
+    <li>Auch aus der Blame-Ansicht erreichbar: über den Button <strong>„Historie"</strong>
+        oder per Rechtsklick auf eine Zeile → „Datei-Historie anzeigen".</li>
+    <li>Doppelklick auf einen Eintrag (oder „Zum Commit springen") wählt den Commit in
+        der Hauptliste aus.</li>
+</ul>
+
+<h3>Verbesserungen</h3>
+<ul>
+    <li>Der Sprung zu einem Commit, der noch nicht in der Liste geladen ist (aus Blame,
+        Datei-Historie oder per Branch-/Tag-Klick), lädt die Liste jetzt automatisch
+        so weit nach, statt nur einen Hinweis anzuzeigen. Eine aktive Suche wird dafür
+        zurückgesetzt. Ist ein Commit von keinem Branch oder Tag aus erreichbar, wird
+        das ausdrücklich gemeldet.</li>
+</ul>
+
 <h3>Fehlerbehebungen</h3>
 <ul>
     <li>Der Branch-Wechsel bei unkommittierten Änderungen („Änderungen verwerfen und

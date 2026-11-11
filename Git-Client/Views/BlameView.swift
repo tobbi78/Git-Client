@@ -19,6 +19,9 @@ struct BlameView: View {
     /// Wird aufgerufen wenn der Nutzer auf eine Commit-SHA klickt.
     var onSelectCommit: ((String) -> Void)? = nil
 
+    /// Wird aufgerufen, wenn der Nutzer die Datei-Historie öffnen möchte.
+    var onShowFileHistory: (() -> Void)? = nil
+
     @Environment(\.dismiss) private var dismiss
 
     private static let dateFormatter: DateFormatter = {
@@ -79,6 +82,9 @@ struct BlameView: View {
                 }
             }
             Spacer()
+            if let onShowFileHistory {
+                Button("Historie", action: onShowFileHistory)
+            }
             Button("Fertig") { dismiss() }
                 .keyboardShortcut(.cancelAction)
         }
@@ -96,7 +102,8 @@ struct BlameView: View {
                         BlameRowView(
                             line: line,
                             minWidth: geo.size.width,
-                            dateFormatter: Self.dateFormatter
+                            dateFormatter: Self.dateFormatter,
+                            onShowFileHistory: onShowFileHistory
                         ) { sha in
                             onSelectCommit?(sha)
                             dismiss()
@@ -114,6 +121,7 @@ private struct BlameRowView: View {
     let line: BlameLine
     let minWidth: CGFloat
     let dateFormatter: DateFormatter
+    var onShowFileHistory: (() -> Void)? = nil
     let onSelectCommit: (String) -> Void
 
     var body: some View {
@@ -169,6 +177,11 @@ private struct BlameRowView: View {
                 ClipboardService.copy(line.sha)
             } label: {
                 Label("SHA kopieren", systemImage: "doc.on.doc")
+            }
+            if let onShowFileHistory {
+                Button(action: onShowFileHistory) {
+                    Label("Datei-Historie anzeigen", systemImage: "clock")
+                }
             }
         }
     }

@@ -462,6 +462,49 @@ actor GitService {
         return BlameParser.parse(output)
     }
 
+    // MARK: - Datei-Historie
+
+    /// Lädt bis zu `limit` Einträge der Historie von `path` (mit Umbenennungen, `--follow`),
+    /// beginnend bei `rev`. `path` ist der Pfad der Datei in `rev`.
+    ///
+    /// Paginierung: nicht per `--skip` — übersprungene Commits werden von `--follow` nicht
+    /// diffed, eine Umbenennung davor würde nie erkannt. Stattdessen startet die nächste
+    /// Seite bei `"<letzter Eintrag>^@"` (alle Eltern) mit dem Pfad vor dem letzten Eintrag
+    /// (`FileHistoryEntry.pathBefore`).
+    func fileHistory(path: String, rev: String, limit: Int) async throws -> [FileHistoryEntry] {
+        let args = [
+            "log", "--follow", "-M", "--name-status",
+            "--pretty=format:\(FileHistoryParser.recordMarker)\(GitLogParser.formatString)",
+            "-\(limit)", rev, "--", path
+        ]
+        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+        return FileHistoryParser.parse(output, startPath: path)
+    }
+
+    /// Diff einer einzelnen Datei in Commit `sha`. Bei Merges gegen den ersten Parent.
+    func fileDiff(sha: String, path: String, oldPath: String?) async throws -> DiffFile? {
+        var args = ["show", "--format=", "--patch", "-M", "--diff-merges=first-parent", sha, "--"]
+        if let oldPath, oldPath != path { args.append(oldPath) }
+        args.append(path)
+        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+        let files = DiffParser.parse(output, sha: sha).files
+        return files.first { $0.newPath == path }
+            ?? files.first { $0.oldPath == path }
+            ?? files.first
+    }
+
+    /// Position von `sha` in der Reihenfolge der Hauptliste (`--all --date-order`),
+    /// oder `nil`, wenn der Commit von keinem Ref aus erreichbar ist.
+    func commitPosition(sha: String) async throws -> Int? {
+        let output = try await runLogAllTolerant(["rev-list", "--all", "--date-order"])
+        var index = 0
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            if line == sha[...] || (sha.count < 40 && line.hasPrefix(sha)) { return index }
+            index += 1
+        }
+        return nil
+    }
+
     // MARK: - Auto-Refresh: lokale Ref-Signatur
 
     /// Liest die aktuelle `refs/heads`- und `refs/remotes`-Struktur des Repositories aus

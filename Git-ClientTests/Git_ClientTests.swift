@@ -1029,10 +1029,15 @@ struct RepositoryViewModelTests {
     }
 
     @Test("selectCommit(bySha:) setzt branchJumpMessage für fehlenden Commit")
-    func selectMissingCommitSetsMessage() {
+    func selectMissingCommitSetsMessage() async throws {
         let vm = RepositoryViewModel(repository: makeBookmark())
         vm.commits = []
         vm.selectCommit(bySha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbee1")
+        // Die Suche nach dem Commit läuft asynchron (Hinweis „wird gesucht…" bzw. Ergebnis)
+        for _ in 0..<100 {
+            if vm.branchJumpMessage != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
         #expect(vm.branchJumpMessage != nil)
         #expect(vm.selectedCommitID == nil)
         #expect(vm.scrollRequestToken == 0)
@@ -3533,9 +3538,14 @@ struct RepositoryViewModelUnitTests {
     // MARK: selectCommit
 
     @Test("selectCommit setzt branchJumpMessage wenn SHA fehlt und nicht am Laden")
-    func selectCommitMissingMessage() {
+    func selectCommitMissingMessage() async throws {
         let vm = makeVM()
         vm.selectCommit(bySha: "aabbccdd1122")
+        // Die Suche nach dem Commit läuft asynchron (Hinweis „wird gesucht…" bzw. Ergebnis)
+        for _ in 0..<100 {
+            if vm.branchJumpMessage != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
         #expect(vm.branchJumpMessage != nil)
     }
 
@@ -5234,5 +5244,266 @@ struct PinnedRepositoriesTests {
             limitPerCategory: 2
         )
         #expect(limited.map(\.title) == ["a4", "a1"])
+    }
+}
+
+// MARK: - Datei-Historie
+
+@Suite("FileHistoryParser")
+struct FileHistoryParserTests {
+
+    private let fields = "\u{1f}h\u{1f}\u{1f}Autor\u{1f}a@b.c\u{1f}2026-01-01T10:00:00+01:00\u{1f}\u{1f}Betreff\u{1f}\u{1e}"
+
+    private func record(_ sha: String, status: String) -> String {
+        "\u{1d}\(sha)\(fields)\n\n\(status)\n"
+    }
+
+    @Test("einfache Änderungen behalten den Pfad")
+    func simpleModifications() {
+        let out = record("aaa", status: "M\ta.txt") + record("bbb", status: "A\ta.txt")
+        let entries = FileHistoryParser.parse(out, startPath: "a.txt")
+        #expect(entries.map(\.id) == ["aaa", "bbb"])
+        #expect(entries.map(\.path) == ["a.txt", "a.txt"])
+        #expect(entries.map(\.changeType) == [.modified, .added])
+    }
+
+    @Test("Umbenennung reicht den alten Pfad an ältere Einträge weiter")
+    func renamePropagatesOldPath() {
+        let out = record("ccc", status: "M\tb.txt")
+            + record("bbb", status: "R087\ta.txt\tb.txt")
+            + record("aaa", status: "")
+        let entries = FileHistoryParser.parse(out, startPath: "b.txt")
+        #expect(entries[1].changeType == .renamed)
+        #expect(entries[1].oldPath == "a.txt")
+        #expect(entries[1].path == "b.txt")
+        // Eintrag ohne Status-Zeile (z. B. Merge) bekommt den Pfad vor der Umbenennung
+        #expect(entries[2].path == "a.txt")
+        #expect(entries[2].changeType == .modified)
+    }
+
+    @Test("startPath dient als Startwert für Einträge ohne Status")
+    func startPathSeed() {
+        let entries = FileHistoryParser.parse(record("aaa", status: ""), startPath: "alt.txt")
+        #expect(entries.first?.path == "alt.txt")
+    }
+
+    @Test("gelöschte Datei wird erkannt")
+    func deleted() {
+        let entries = FileHistoryParser.parse(record("aaa", status: "D\tx.txt"), startPath: "x.txt")
+        #expect(entries.first?.changeType == .deleted)
+    }
+
+    @Test("leere Ausgabe liefert keine Einträge")
+    func empty() {
+        #expect(FileHistoryParser.parse("", startPath: "a").isEmpty)
+    }
+}
+
+@Suite("Datei-Historie — GitService und ViewModel")
+@MainActor
+struct FileHistoryIntegrationTests {
+
+    private func makeRepo() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("filehist-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try sh("git", "-C", url.path, "init")
+        try sh("git", "-C", url.path, "config", "user.email", "fh@test.com")
+        try sh("git", "-C", url.path, "config", "user.name", "FhTester")
+        return url
+    }
+
+    private func commitAll(_ url: URL, _ message: String) throws {
+        try sh("git", "-C", url.path, "add", "-A")
+        try sh("git", "-C", url.path, "commit", "-m", message)
+    }
+
+    private func lines(_ changed: String) -> String {
+        (1...10).map { $0 == 5 ? changed : "Zeile \($0)" }.joined(separator: "\n") + "\n"
+    }
+
+    /// a.txt anlegen, ändern, nach b.txt umbenennen (+ Änderung), erneut ändern.
+    private func makeRenameRepo() throws -> URL {
+        let url = try makeRepo()
+        let a = url.appendingPathComponent("a.txt")
+        try lines("eins").write(to: a, atomically: true, encoding: .utf8)
+        try commitAll(url, "c1")
+        try lines("zwei").write(to: a, atomically: true, encoding: .utf8)
+        try commitAll(url, "c2")
+        try sh("git", "-C", url.path, "mv", "a.txt", "b.txt")
+        try lines("drei").write(to: url.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        try commitAll(url, "c3")
+        try lines("vier").write(to: url.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        try commitAll(url, "c4")
+        return url
+    }
+
+    /// Repo mit `count` Commits, die alle `f.txt` ändern (ein einziger Shell-Prozess).
+    private func makeManyCommitsRepo(count: Int) throws -> URL {
+        let url = try makeRepo()
+        try sh("sh", "-c",
+               "cd '\(url.path)' && for i in $(seq 1 \(count)); do echo $i > f.txt; git add f.txt; git commit -q -m c$i; done")
+        return url
+    }
+
+    private func smallBatchSettings() -> (AppSettings, () -> Void) {
+        let suite = "Git-Client.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.set(AppSettings.minimumCommitBatchSize, forKey: AppSettings.commitBatchSizeKey)
+        return (AppSettings(defaults: defaults), { defaults.removePersistentDomain(forName: suite) })
+    }
+
+    // MARK: GitService
+
+    @Test("fileHistory folgt Umbenennungen")
+    func historyFollowsRename() async throws {
+        let url = try makeRenameRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+
+        let entries = try await svc.fileHistory(path: "b.txt", rev: "HEAD", limit: 50)
+        #expect(entries.map(\.commit.subject) == ["c4", "c3", "c2", "c1"])
+        #expect(entries.map(\.path) == ["b.txt", "b.txt", "a.txt", "a.txt"])
+        #expect(entries[1].oldPath == "a.txt")
+        #expect(entries[1].changeType == .renamed)
+        #expect(entries[3].changeType == .added)
+    }
+
+    @Test("fileHistory: Seiten ergeben zusammen die gesamte Historie")
+    func historyPaging() async throws {
+        let url = try makeRenameRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+
+        // Seitengrenze liegt direkt hinter der Umbenennung (c3) — der heikle Fall
+        let p1 = try await svc.fileHistory(path: "b.txt", rev: "HEAD", limit: 2)
+        let last = try #require(p1.last)
+        let p2 = try await svc.fileHistory(path: last.pathBefore, rev: "\(last.id)^@", limit: 2)
+        #expect((p1 + p2).map(\.commit.subject) == ["c4", "c3", "c2", "c1"])
+        #expect(p2.map(\.path) == ["a.txt", "a.txt"])
+
+        // Nach dem letzten Eintrag (Root-Commit) ist die Historie zu Ende
+        let end = try #require(p2.last)
+        let p3 = try await svc.fileHistory(path: end.pathBefore, rev: "\(end.id)^@", limit: 2)
+        #expect(p3.isEmpty)
+    }
+
+    @Test("fileDiff liefert die Datei des Rename-Commits")
+    func diffOfRenameCommit() async throws {
+        let url = try makeRenameRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+
+        let entries = try await svc.fileHistory(path: "b.txt", rev: "HEAD", limit: 50)
+        let rename = entries[1]
+        let diff = try await svc.fileDiff(sha: rename.id, path: rename.path, oldPath: rename.oldPath)
+        #expect(diff?.newPath == "b.txt")
+        #expect(diff?.oldPath == "a.txt")
+        #expect(diff?.hunks.isEmpty == false)
+    }
+
+    @Test("commitPosition entspricht dem Index in loadCommits")
+    func commitPositionMatchesList() async throws {
+        let url = try makeRenameRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+
+        let commits = try await svc.loadCommits()
+        for (index, commit) in commits.enumerated() {
+            #expect(try await svc.commitPosition(sha: commit.sha) == index)
+        }
+        let unknown = String(repeating: "0", count: 40)
+        #expect(try await svc.commitPosition(sha: unknown) == nil)
+    }
+
+    // MARK: ViewModel
+
+    @Test("requestFileHistory ohne gewählten Commit öffnet kein Sheet")
+    func requestWithoutCommit() {
+        let bookmark = RepositoryBookmark(name: "X", path: URL(fileURLWithPath: "/tmp/none"))
+        let vm = RepositoryViewModel(repository: bookmark)
+        vm.requestFileHistory(path: "a.txt")
+        #expect(!vm.showFileHistorySheet)
+    }
+
+    @Test("Datei-Historie lädt seitenweise und wählt den ersten Eintrag mit Diff")
+    func viewModelPagesHistory() async throws {
+        let url = try makeManyCommitsRepo(count: 130)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let (settings, cleanup) = smallBatchSettings()
+        defer { cleanup() }
+        let vm = RepositoryViewModel(
+            repository: RepositoryBookmark(name: "Many", path: url), settings: settings)
+        await vm.load()
+        vm.selectedCommitID = vm.commits.first?.sha
+
+        vm.requestFileHistory(path: "f.txt")
+        for _ in 0..<100 {
+            if vm.fileHistoryEntries.count == 100, vm.fileHistoryDiff != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(vm.showFileHistorySheet)
+        #expect(vm.fileHistoryEntries.count == 100)
+        #expect(vm.fileHistoryCanLoadMore)
+        #expect(vm.selectedFileHistorySha == vm.fileHistoryEntries.first?.id)
+        #expect(vm.fileHistoryDiff != nil)
+
+        await vm.loadMoreFileHistory()
+        #expect(vm.fileHistoryEntries.count == 130)
+        #expect(!vm.fileHistoryCanLoadMore)
+    }
+
+    @Test("jumpToCommitFromFileHistory schließt beide Sheets")
+    func jumpClosesSheets() async throws {
+        let url = try makeRenameRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let vm = RepositoryViewModel(repository: RepositoryBookmark(name: "R", path: url))
+        await vm.load()
+        vm.showBlameSheet = true
+        vm.showFileHistorySheet = true
+        let target = try #require(vm.commits.last)
+        vm.jumpToCommitFromFileHistory(sha: target.sha)
+        #expect(!vm.showBlameSheet)
+        #expect(!vm.showFileHistorySheet)
+        #expect(vm.selectedCommitID == target.sha)
+    }
+
+    @Test("selectCommit(bySha:) lädt zu weit hinten liegenden Commits nach")
+    func selectCommitRevealsOlderCommit() async throws {
+        let url = try makeManyCommitsRepo(count: 130)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let (settings, cleanup) = smallBatchSettings()
+        defer { cleanup() }
+        let vm = RepositoryViewModel(
+            repository: RepositoryBookmark(name: "Many", path: url), settings: settings)
+        await vm.load()
+        #expect(vm.commits.count == 100)
+
+        let svc = GitService(repositoryPath: url)
+        let all = try await svc.loadCommits(limit: 500)
+        let oldest = try #require(all.last)
+        vm.selectCommit(bySha: oldest.sha)
+        for _ in 0..<100 {
+            if vm.selectedCommitID == oldest.sha { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(vm.selectedCommitID == oldest.sha)
+        #expect(vm.commits.contains { $0.sha == oldest.sha })
+        #expect(!vm.isRevealingCommit)
+    }
+
+    @Test("selectCommit(bySha:) meldet unerreichbare Commits neutral")
+    func selectCommitUnreachable() async throws {
+        let url = try makeRenameRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let vm = RepositoryViewModel(repository: RepositoryBookmark(name: "R", path: url))
+        await vm.load()
+        vm.selectCommit(bySha: String(repeating: "0", count: 40))
+        for _ in 0..<100 {
+            if vm.branchJumpMessage?.contains("erreichbar") == true { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(vm.branchJumpMessage?.contains("erreichbar") == true)
+        #expect(vm.selectedCommitID == nil)
     }
 }

@@ -18,8 +18,9 @@ actor GitService {
 
     /// Injiziert Zugangsdaten in `remoteURL`, falls beide angegeben sind — sonst bleibt
     /// die URL unverändert. Zentrale Stelle für den Credential-URL-Aufbau, der zuvor in
-    /// clone/fetch/remoteHeads dreifach dupliziert war.
-    nonisolated private static func authenticatedURL(
+    /// clone/fetch/remoteHeads dreifach dupliziert war. Nicht `private`, damit sie direkt
+    /// testbar ist (über lokale Pfad-Remotes lassen sich Credentials nicht prüfen).
+    nonisolated static func authenticatedURL(
         _ remoteURL: String, username: String?, password: String?
     ) -> String {
         guard let user = username, !user.isEmpty,

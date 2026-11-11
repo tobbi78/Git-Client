@@ -360,19 +360,7 @@ struct MainWindowView: View {
                 .foregroundStyle(Color.accentColor)
                 .font(.callout)
 
-            let detail: String = {
-                var parts: [String] = []
-                if news.hasLocalChanges { parts.append("Neue lokale Commits") }
-                if news.remoteAheadBranches > 0 {
-                    let label = news.remoteAheadBranches == 1
-                        ? "1 Branch auf dem Server voraus"
-                        : "\(news.remoteAheadBranches) Branches auf dem Server voraus"
-                    parts.append(label)
-                }
-                return parts.joined(separator: " · ")
-            }()
-
-            Text(detail.isEmpty ? "Neue Commits vorhanden" : detail)
+            Text(news.summary.isEmpty ? "Neue Commits vorhanden" : news.summary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

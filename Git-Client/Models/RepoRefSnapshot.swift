@@ -22,6 +22,21 @@ nonisolated struct RepoNewCommits: Equatable, Sendable {
 
     /// `true`, wenn mindestens eine Art von Neuigkeit vorliegt.
     var hasNews: Bool { hasLocalChanges || remoteAheadBranches > 0 }
+
+    /// Textbausteine für Badge-Tooltip, Banner und Menu-Bar-Extra.
+    var summaryParts: [String] {
+        var parts: [String] = []
+        if hasLocalChanges { parts.append("Neue lokale Commits") }
+        if remoteAheadBranches > 0 {
+            parts.append(remoteAheadBranches == 1
+                ? "1 Branch auf dem Server voraus"
+                : "\(remoteAheadBranches) Branches auf dem Server voraus")
+        }
+        return parts
+    }
+
+    /// Alle Textbausteine mit „ · " verbunden (leer, wenn keine Neuigkeiten).
+    var summary: String { summaryParts.joined(separator: " · ") }
 }
 
 // MARK: - RepoRefSnapshot

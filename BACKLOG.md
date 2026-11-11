@@ -47,7 +47,7 @@ einfach wegzulassen.
 | 13 | Offen | **Stash-Liste (nur lesend)**: `git stash list`/`show` in der Seitenleiste | Feature | Mittel | Reine Anzeige, keine Apply/Drop-Aktion — bleibt damit innerhalb der Schreib-Policy. |
 | 14 | Offen | **Lokalisierung (Englisch)** | Feature | Groß (~150–250 UI-Strings) | Das Projekt hat gerade erst `STRING_CATALOG_GENERATE_SYMBOLS` aktiviert — ein String-Catalog-Umzug (.xcstrings) ist der naheliegende erste Schritt, unabhängig davon, ob am Ende tatsächlich übersetzt wird. Nur relevant, falls die App über deinen eigenen Gebrauch hinaus geteilt werden soll. |
 | 15 | Offen | **Accessibility-Durchgang** (VoiceOver-Labels, Dynamic Type, Kontrast) | Optimierung | Mittel | Dafür existieren bereits fertige Skills in dieser Umgebung (Dynamic-Type-, VoiceOver-, Kontrast-Spezialisten) — Aufwand ist niedriger als er aussieht. |
-| 16 | Offen | **Menu-Bar-Extra / Dock-Badge** mit Gesamtzahl "neuer Commits" über alle Repos | Feature | Mittel–Hoch | Daten sind durch das bestehende Auto-Refresh-Badge bereits vorhanden, nur die Präsentation fehlt. |
+| 16 | ✅ Erledigt | **Menu-Bar-Extra / Dock-Badge** mit Gesamtzahl "neuer Commits" über alle Repos | Feature | Mittel–Hoch | Daten sind durch das bestehende Auto-Refresh-Badge bereits vorhanden, nur die Präsentation fehlt. |
 | 17 | Offen | **`CommitGraphBuilder`-Lane-Lookup optimieren** (`firstIndex(of:)` → Dictionary, O(L)→O(1) pro Commit) | Optimierung | Klein | Nur relevant, falls du bei sehr breiten Historien (viele lange parallele Branches) tatsächlich Ruckeln bemerkst — aktuell kein bekanntes Problem, rein vorbeugend. |
 
 ## Tier 4 — Nice-to-have / spekulativ (niedrige Priorität)

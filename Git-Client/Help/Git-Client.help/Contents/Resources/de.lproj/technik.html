@@ -647,6 +647,16 @@ git log --all --date-order --pretty=format:… -2000 --skip=2000
     <li><code>markRepositorySeen(_:)</code> setzt die Baseline auf die aktuelle
         Signatur zurück und leert den Badge-Status — aufgerufen beim Öffnen eines
         Repositories oder per Klick auf „Aktualisieren" im Hinweis-Banner.</li>
+    <li>Dock-Badge und Menu-Bar-Extra: <code>repositoriesWithNews</code> filtert die
+        Bookmarks auf <code>newCommitStatus[id]?.hasNews == true</code> (vorhandener Pfad);
+        <code>newsRepositoryCount</code> ist deren Anzahl. Ein <code>didSet</code> auf
+        <code>newCommitStatus</code> ruft <code>updateDockBadge()</code> auf, das
+        <code>NSApp.dockTile.badgeLabel</code> über die reine Funktion
+        <code>AppModel.dockBadgeLabel(count:enabled:)</code> setzt (<code>nil</code> bei
+        0 oder abgeschaltet). Im Test-Init ist das Setzen deaktiviert. Das
+        <code>MenuBarExtra</code> (<code>NewsMenuBarView</code>) wird über
+        <code>showMenuBarExtra</code> ein-/ausgeblendet; Textbausteine liefert
+        <code>RepoNewCommits.summary</code>.</li>
 </ol>
 
 <h4>pollRemotes() — <code>ls-remote</code>-Vorprüfung, Fetch nur bei Neuigkeiten</h4>

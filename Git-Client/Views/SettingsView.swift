@@ -26,6 +26,8 @@ struct SettingsView: View {
     @State private var selectedProjectID: UUID? = nil
     @State private var draftAutoRefreshEnabled: Bool = true
     @State private var draftPollIntervalText: String = ""
+    @State private var draftShowDockBadge: Bool = true
+    @State private var draftShowMenuBarExtra: Bool = true
     @State private var draftShowLineNumbers: Bool = true
     @State private var draftAppearance: AppAppearance = .system
 
@@ -55,6 +57,8 @@ struct SettingsView: View {
         || draftProjects != AppSettings.shared.jiraProjects
         || draftAutoRefreshEnabled != AppSettings.shared.autoRefreshEnabled
         || parsedPollInterval != AppSettings.shared.remotePollInterval
+        || draftShowDockBadge != AppSettings.shared.showDockBadge
+        || draftShowMenuBarExtra != AppSettings.shared.showMenuBarExtra
         || draftShowLineNumbers != AppSettings.shared.showDiffLineNumbers
         || draftAppearance != AppSettings.shared.appearance
     }
@@ -323,6 +327,17 @@ struct SettingsView: View {
                 Text("Remote-Prüf-Intervall")
             }
             .disabled(!draftAutoRefreshEnabled)
+
+            Section {
+                Toggle("Badge am Dock-Symbol anzeigen", isOn: $draftShowDockBadge)
+                Toggle("Symbol in der Menüleiste anzeigen", isOn: $draftShowMenuBarExtra)
+                Text("Zeigt die Anzahl der Repositories mit neuen Commits (nicht die Zahl der Commits). Die Menüleiste listet die betroffenen Repositories zum direkten Öffnen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Anzeige außerhalb des Fensters")
+            }
+            .disabled(!draftAutoRefreshEnabled)
         }
         .formStyle(.grouped)
         .padding(.bottom, 4)
@@ -336,6 +351,8 @@ struct SettingsView: View {
         draftProjects  = AppSettings.shared.jiraProjects
         draftAutoRefreshEnabled = AppSettings.shared.autoRefreshEnabled
         draftPollIntervalText   = "\(AppSettings.shared.remotePollInterval)"
+        draftShowDockBadge      = AppSettings.shared.showDockBadge
+        draftShowMenuBarExtra   = AppSettings.shared.showMenuBarExtra
         draftShowLineNumbers    = AppSettings.shared.showDiffLineNumbers
         draftAppearance         = AppSettings.shared.appearance
     }
@@ -363,6 +380,8 @@ struct SettingsView: View {
 
         // Auto-Refresh
         AppSettings.shared.setAutoRefreshEnabled(draftAutoRefreshEnabled)
+        AppSettings.shared.setShowDockBadge(draftShowDockBadge)
+        AppSettings.shared.setShowMenuBarExtra(draftShowMenuBarExtra)
         if let rawInterval = parsedPollInterval {
             let clampedInterval = rawInterval == 0 ? 0 : max(rawInterval, AppSettings.minimumRemotePollInterval)
             if clampedInterval != rawInterval {

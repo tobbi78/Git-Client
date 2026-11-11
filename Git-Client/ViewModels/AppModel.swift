@@ -24,7 +24,39 @@ final class AppModel {
 
     /// Aktueller Neuigkeiten-Stand pro Repository-ID.
     /// Von RepositoryBrowserView (Badge) und MainWindowView (Banner) beobachtet.
-    private(set) var newCommitStatus: [UUID: RepoNewCommits] = [:]
+    /// Jede Änderung aktualisiert automatisch das Dock-Badge.
+    private(set) var newCommitStatus: [UUID: RepoNewCommits] = [:] {
+        didSet { updateDockBadge() }
+    }
+
+    /// Repositories mit Neuigkeiten (Reihenfolge der Bookmark-Liste, nur vorhandene Pfade).
+    var repositoriesWithNews: [RepositoryBookmark] {
+        bookmarkNodes.allRepositories().filter {
+            newCommitStatus[$0.id]?.hasNews == true
+                && FileManager.default.fileExists(atPath: $0.path.path)
+        }
+    }
+
+    /// Anzahl der Repositories mit Neuigkeiten — Grundlage für Dock-Badge und Menu-Bar-Extra.
+    var newsRepositoryCount: Int { repositoriesWithNews.count }
+
+    /// `false` im Test-Init, damit Tests das echte Dock-Icon nicht verändern.
+    private let appliesDockBadge: Bool
+
+    /// Badge-Text fürs Dock; `nil` entfernt das Badge.
+    static func dockBadgeLabel(count: Int, enabled: Bool) -> String? {
+        guard enabled, count > 0 else { return nil }
+        return "\(count)"
+    }
+
+    /// Setzt das Dock-Badge gemäß aktuellem Zähler und Einstellung.
+    func updateDockBadge() {
+        guard appliesDockBadge else { return }
+        NSApp.dockTile.badgeLabel = Self.dockBadgeLabel(
+            count: newsRepositoryCount,
+            enabled: settings.showDockBadge
+        )
+    }
 
     /// Lokale Kennzahlen pro Repository-ID für die Übersichtsliste.
     private(set) var repoStatus: [UUID: RepoStatus] = [:]
@@ -50,6 +82,7 @@ final class AppModel {
     init(settings: AppSettings = .shared) {
         self.store = BookmarkStore()
         self.settings = settings
+        self.appliesDockBadge = true
         bookmarkNodes = store.load()
         startMonitoring()
     }
@@ -58,6 +91,7 @@ final class AppModel {
     init(store: BookmarkStore, settings: AppSettings = .shared) {
         self.store = store
         self.settings = settings
+        self.appliesDockBadge = false
         bookmarkNodes = store.load()
         // Im Test-Init kein Monitoring starten (kein reales .git vorhanden).
     }
@@ -68,6 +102,8 @@ final class AppModel {
         store.save(bookmarkNodes)
         // Monitoring nach jeder Bookmark-Änderung neu aufsetzen
         restartMonitoring()
+        // Gelöschte/verschobene Repos verändern den Zähler.
+        updateDockBadge()
     }
 
     // MARK: - Lesezeichen-Mutationen

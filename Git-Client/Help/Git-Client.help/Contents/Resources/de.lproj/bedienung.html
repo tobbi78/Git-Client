@@ -573,6 +573,11 @@
         dem betroffenen Eintrag.</li>
     <li>Im geöffneten Repository als <strong>Hinweis-Banner</strong> oberhalb der
         Commit-Liste, mit einem Button zum Aktualisieren.</li>
+    <li>Als <strong>Badge am Dock-Symbol</strong>: Die Zahl nennt, in wie vielen
+        Repositories es Neuigkeiten gibt (nicht die Anzahl der Commits).</li>
+    <li>Als <strong>Symbol in der Menüleiste</strong> (ebenfalls mit dieser Zahl). Das
+        Menü listet die betroffenen Repositories; ein Klick öffnet das Repository und
+        holt Git-Client in den Vordergrund.</li>
 </ul>
 <p>
     Ein Klick auf „Aktualisieren" lädt die Commit-Liste lokal neu (kein zusätzlicher
@@ -637,6 +642,10 @@
         Commits geprüft wird, in Sekunden (Mindestwert 60; 0 deaktiviert nur die
         Remote-Prüfung, lokale Erkennung bleibt aktiv). Gilt für alle Repositories mit
         eingerichtetem Remote — siehe <a href="#autorefresh">automatische Erkennung</a>.</td></tr>
+    <tr><td>Badge am Dock-Symbol anzeigen</td><td>Zeigt am Dock-Symbol die Anzahl der
+        Repositories mit Neuigkeiten. Ohne Neuigkeiten verschwindet das Badge.</td></tr>
+    <tr><td>Symbol in der Menüleiste anzeigen</td><td>Blendet das Menüleisten-Symbol mit
+        der Liste der Repositories mit Neuigkeiten ein oder aus.</td></tr>
 </table>
 
 <h4>Änderungen speichern</h4>

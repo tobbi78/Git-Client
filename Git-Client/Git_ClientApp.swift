@@ -11,6 +11,8 @@ import SwiftUI
 struct Git_ClientApp: App {
     @State private var appModel = AppModel()
     @AppStorage(AppSettings.appearanceKey) private var appearanceRaw = AppSettings.defaultAppearance.rawValue
+    @AppStorage(AppSettings.showMenuBarExtraKey) private var showMenuBarExtra = AppSettings.defaultShowMenuBarExtra
+    @AppStorage(AppSettings.showDockBadgeKey) private var showDockBadge = AppSettings.defaultShowDockBadge
 
     // Explizit gespeichertes Farbschema: nie nil — onChange setzt es VOR dem nächsten
     // Render-Lauf, damit .preferredColorScheme immer einen konkreten Wert bekommt.
@@ -28,7 +30,7 @@ struct Git_ClientApp: App {
     }()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             Group {
                 if let repository = appModel.openedRepository {
                     MainWindowView(repository: repository)
@@ -41,6 +43,10 @@ struct Git_ClientApp: App {
             .task {
                 applyNSAppearance(appearanceRaw)
                 resolvedScheme = Self.computeScheme(appearanceRaw)
+            }
+            .onChange(of: showDockBadge) { _, _ in
+                // Schalter in den Einstellungen wirkt sofort.
+                appModel.updateDockBadge()
             }
             .onChange(of: appearanceRaw) { _, newRaw in
                 // applyNSAppearance VOR computeScheme: NSApp.effectiveAppearance
@@ -73,6 +79,19 @@ struct Git_ClientApp: App {
             }
         }
         .defaultSize(width: 900, height: 700)
+
+        // Menu-Bar-Extra: Repos mit Neuigkeiten (abschaltbar in den Einstellungen)
+        MenuBarExtra(isInserted: $showMenuBarExtra) {
+            NewsMenuBarView()
+                .environment(appModel)
+        } label: {
+            let count = appModel.newsRepositoryCount
+            if count > 0 {
+                Label("\(count)", systemImage: "arrow.triangle.branch")
+            } else {
+                Image(systemName: "arrow.triangle.branch")
+            }
+        }
 
         // Einstellungsfenster (⌘,)
         Settings {

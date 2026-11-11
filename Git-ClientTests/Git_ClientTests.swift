@@ -4845,6 +4845,14 @@ struct AppModelMonitoringTests {
         // Da Neuigkeiten erkannt wurden, holt pollRemotes automatisch den echten Fetch
         // nach — die lokalen Ahead/Behind-Zahlen sind danach aktuell.
         #expect(model.repoStatus[bookmark.id]?.behindCount == 1)
+
+        // Dock-Badge/Menu-Bar-Extra: das Repo zählt als „mit Neuigkeiten" …
+        #expect(model.newsRepositoryCount == 1)
+        #expect(model.repositoriesWithNews.map(\.id) == [bookmark.id])
+        // … und fällt nach „gesehen" wieder aus dem Zähler.
+        await model.markRepositorySeen(bookmark.id)
+        #expect(model.newsRepositoryCount == 0)
+        #expect(model.repositoriesWithNews.isEmpty)
     }
 
     @Test("pollRemotes prüft auch hinzugefügte Repos ohne gespeicherte remoteURL über den lokalen Remote")
@@ -5725,5 +5733,60 @@ struct GitServiceRemoteOperationsTests {
         await #expect(throws: GitError.self) {
             try await svc.remoteHeads(remoteURL: nil, username: nil, password: nil)
         }
+    }
+}
+
+// MARK: - Neuigkeiten außerhalb des Fensters (Dock-Badge / Menu-Bar-Extra)
+
+@Suite("Neuigkeiten-Anzeige — Einstellungen, Badge-Text, Zusammenfassung")
+struct NewsDisplayTests {
+
+    @Test("showDockBadge und showMenuBarExtra sind standardmäßig an")
+    func settingsDefaults() {
+        withIsolatedSettings { settings in
+            #expect(settings.showDockBadge)
+            #expect(settings.showMenuBarExtra)
+        }
+    }
+
+    @Test("showDockBadge und showMenuBarExtra lassen sich unabhängig ausschalten")
+    func settingsRoundTrip() {
+        withIsolatedSettings { settings in
+            settings.setShowDockBadge(false)
+            #expect(!settings.showDockBadge)
+            #expect(settings.showMenuBarExtra)
+            settings.setShowMenuBarExtra(false)
+            #expect(!settings.showMenuBarExtra)
+            settings.setShowDockBadge(true)
+            #expect(settings.showDockBadge)
+        }
+    }
+
+    @MainActor
+    @Test("dockBadgeLabel: nil bei 0 oder deaktiviert, sonst die Zahl")
+    func dockBadgeLabel() {
+        #expect(AppModel.dockBadgeLabel(count: 0, enabled: true) == nil)
+        #expect(AppModel.dockBadgeLabel(count: 3, enabled: true) == "3")
+        #expect(AppModel.dockBadgeLabel(count: 3, enabled: false) == nil)
+    }
+
+    @Test("RepoNewCommits.summary: keine Neuigkeiten ergibt leeren Text")
+    func summaryEmpty() {
+        let news = RepoNewCommits()
+        #expect(news.summaryParts.isEmpty)
+        #expect(news.summary.isEmpty)
+    }
+
+    @Test("RepoNewCommits.summary: nur lokal, ein Branch, mehrere Branches")
+    func summarySingleKinds() {
+        #expect(RepoNewCommits(hasLocalChanges: true).summary == "Neue lokale Commits")
+        #expect(RepoNewCommits(remoteAheadBranches: 1).summary == "1 Branch auf dem Server voraus")
+        #expect(RepoNewCommits(remoteAheadBranches: 3).summary == "3 Branches auf dem Server voraus")
+    }
+
+    @Test("RepoNewCommits.summary: lokal und remote werden mit · verbunden")
+    func summaryCombined() {
+        let news = RepoNewCommits(hasLocalChanges: true, remoteAheadBranches: 2)
+        #expect(news.summary == "Neue lokale Commits · 2 Branches auf dem Server voraus")
     }
 }

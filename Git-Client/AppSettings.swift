@@ -121,6 +121,42 @@ nonisolated struct AppSettings {
         defaults.set(seconds, forKey: Self.remotePollIntervalKey)
     }
 
+    // MARK: - Neuigkeiten außerhalb des Fensters
+
+    /// UserDefaults-Schlüssel: Dock-Badge mit der Zahl der Repos mit Neuigkeiten.
+    static let showDockBadgeKey = "showDockBadge"
+
+    /// UserDefaults-Schlüssel: Menu-Bar-Extra mit der Liste der Repos mit Neuigkeiten.
+    static let showMenuBarExtraKey = "showMenuBarExtra"
+
+    /// Standardwert: Dock-Badge ist eingeschaltet.
+    static let defaultShowDockBadge = true
+
+    /// Standardwert: Menu-Bar-Extra ist eingeschaltet.
+    static let defaultShowMenuBarExtra = true
+
+    var showDockBadge: Bool {
+        if defaults.object(forKey: Self.showDockBadgeKey) == nil {
+            return Self.defaultShowDockBadge
+        }
+        return defaults.bool(forKey: Self.showDockBadgeKey)
+    }
+
+    func setShowDockBadge(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Self.showDockBadgeKey)
+    }
+
+    var showMenuBarExtra: Bool {
+        if defaults.object(forKey: Self.showMenuBarExtraKey) == nil {
+            return Self.defaultShowMenuBarExtra
+        }
+        return defaults.bool(forKey: Self.showMenuBarExtraKey)
+    }
+
+    func setShowMenuBarExtra(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Self.showMenuBarExtraKey)
+    }
+
     // MARK: - Anzeige
 
     /// UserDefaults-Schlüssel: Zeilennummern im Diff anzeigen.

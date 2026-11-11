@@ -137,16 +137,17 @@ struct MainWindowView: View {
                 get: { vm?.pendingCheckoutBranch != nil },
                 set: { if !$0 { vm?.cancelPendingCheckout() } }
             ),
-            titleVisibility: .visible
-        ) {
+            titleVisibility: .visible,
+            presenting: vm?.pendingCheckoutBranch
+        ) { branch in
             Button("Änderungen verwerfen und wechseln", role: .destructive) {
-                Task { await vm?.confirmCheckoutDiscardingChanges() }
+                Task { await vm?.confirmCheckoutDiscardingChanges(branch) }
             }
             Button("Abbrechen", role: .cancel) {
                 vm?.cancelPendingCheckout()
             }
-        } message: {
-            Text("Es gibt unkommittete Änderungen. Beim Wechsel zu \(vm?.pendingCheckoutBranch?.shortName ?? "") werden sie verworfen.")
+        } message: { branch in
+            Text("Es gibt unkommittete Änderungen. Beim Wechsel zu \(branch.shortName) werden sie verworfen.")
         }
         .alert(
             "Branch-Wechsel fehlgeschlagen",

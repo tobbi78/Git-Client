@@ -338,9 +338,11 @@ final class RepositoryViewModel {
         }
     }
 
-    /// Vom Warndialog: Änderungen verwerfen und wechseln.
-    func confirmCheckoutDiscardingChanges() async {
-        guard let branch = pendingCheckoutBranch else { return }
+    /// Vom Warndialog: Änderungen verwerfen und wechseln. Der Branch kommt als Parameter
+    /// aus der `presenting:`-Variante von `confirmationDialog`, weil SwiftUI beim Antippen
+    /// eines beliebigen Buttons `pendingCheckoutBranch` per Dismiss-Handler schon vor
+    /// Ausführung dieses Tasks auf nil setzt (siehe `performPendingBranchDeletion`).
+    func confirmCheckoutDiscardingChanges(_ branch: Branch) async {
         pendingCheckoutBranch = nil
         await performCheckout(branch, force: true)
     }

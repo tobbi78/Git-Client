@@ -1353,9 +1353,11 @@ struct RepositoryViewModelCheckoutTests {
         await vm.load()
         let feature = try #require(vm.branches.first { $0.name == "feature" })
         await vm.requestCheckout(feature)
-        #expect(vm.pendingCheckoutBranch != nil)
+        let pending = try #require(vm.pendingCheckoutBranch)
+        // Simuliert den SwiftUI-Dismiss-Handler, der vor dem Confirm-Task läuft.
+        vm.cancelPendingCheckout()
 
-        await vm.confirmCheckoutDiscardingChanges()
+        await vm.confirmCheckoutDiscardingChanges(pending)
 
         #expect(vm.pendingCheckoutBranch == nil)
         #expect(vm.checkoutErrorMessage == nil)

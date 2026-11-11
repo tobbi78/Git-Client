@@ -26,7 +26,7 @@ einfach wegzulassen.
 | 24 | ✅ Erledigt | **Remote im Browser öffnen**: Toolbar-Button öffnet die Webseite des Remotes (`origin`) im Standardbrowser | Feature | Klein (`git remote get-url` + URL-Umwandlung, `NSWorkspace`) | Leitet aus SSH-/HTTPS-Remote-Adressen die Web-URL ab (ohne Zugangsdaten, SSH-Port und `.git`). Bewusst ohne Absprung in den aktuellen Branch — hosterabhängig und nicht gewünscht. Ohne Remote ist der Button deaktiviert. |
 | 4 | ✅ Erledigt | **Favoriten/Angepinnte Repositories** — oben in der Übersicht fixiert, unabhängig von Ordnerstruktur | Feature | Klein–Mittel | Bei vielen Repos schneller Zugriff auf die 2–3 täglich genutzten. |
 | 5 | ✅ Erledigt | **`AppSettings` dependency-injectable machen** (statt hartkodiertem `UserDefaults.standard`) | Optimierung | Mittel | Behebt die *Ursache* der JIRA-Settings-Bug-Klasse strukturell, statt nur das Symptom (der `withRestoredDefaults`-Test-Helfer bleibt ein Pflaster). Macht `SettingsView`/Tests robuster gegen zukünftige ähnliche Bugs. |
-| 6 | 🔧 In Arbeit | **Testabdeckung für `clone`/`fetch`/`fastForward`/`remoteHeads`** (bisher nur indirekt über ViewModel-/AppModel-Tests abgedeckt) | Optimierung | Mittel | Einzige verbliebenen "kalten" Stellen in `GitService`; Netzwerk-Anteil lässt sich über eine lokale `file://`-Remote-Fixture (temporäres zweites Git-Repo) testen, ohne echtes Netz. |
+| 6 | ✅ Erledigt | **Testabdeckung für `clone`/`fetch`/`fastForward`/`remoteHeads`** (bisher nur indirekt über ViewModel-/AppModel-Tests abgedeckt) | Optimierung | Mittel | Einzige verbliebenen "kalten" Stellen in `GitService`; Netzwerk-Anteil lässt sich über eine lokale `file://`-Remote-Fixture (temporäres zweites Git-Repo) testen, ohne echtes Netz. |
 
 ## Tier 2 — Hoher Nutzen, mittlerer Aufwand
 

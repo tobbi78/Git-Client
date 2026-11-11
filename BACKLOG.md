@@ -1,6 +1,6 @@
 # Git-Client — Feature- & Optimierungs-Backlog
 
-Stand: 2026-09-19. Priorisiert nach Nutzen/Aufwand, nicht nach Datum. Dies ist ein
+Stand: 2026-11-11. Priorisiert nach Nutzen/Aufwand, nicht nach Datum. Dies ist ein
 internes Planungsdokument (kein Nutzer-Feature-Versprechen) — Einträge werden bei
 Bedarf verworfen, umsortiert oder ergänzt.
 
@@ -58,6 +58,8 @@ einfach wegzulassen.
 | 19 | Offen | **Shortcuts/App-Intents-Integration** ("Öffne Repository X" als Siri-Kurzbefehl) | Feature | Nettes Differenzierungsmerkmal, aber für ein Solo-Tool fraglicher ROI. |
 | 20 | Offen | **WidgetKit-Widget** mit Repo-Status auf dem Schreibtisch | Feature | Höherer Aufwand relativ zum Nutzen bei einem Ein-Personen-Tool. |
 | 21 | Offen | **Submodule-Erkennung** (nur lesend) | Feature | Nur relevant, falls deine Repos tatsächlich Submodule nutzen. |
+| 25 | Offen | **Befehlspalette um Aktionen erweitern** (⌘K): nicht nur ansteuern, sondern bestehende Aktionen auslösen — Aktualisieren, Branch wechseln, Im Finder/Terminal/Browser öffnen | Feature | Mittel. Nur bereits erlaubte Aktionen, keine neue Schreib-Operation; baut auf #11 auf. |
+| 26 | Offen | **Worktree-Anzeige** (nur lesend, `git worktree list`) | Feature | Klein–Mittel. Nur relevant, falls du Worktrees nutzt; ähnlich gelagert wie #21. |
 
 ---
 
@@ -69,6 +71,12 @@ Stash Apply/Drop/Pop (Stash **anzeigen** ist ok, s. Tier 3 #13 — Stash **verä
 nicht), Tag erstellen oder löschen, Konfliktauflösung. Falls sich die
 Schreib-Policy jemals ändern sollte, wäre das ein bewusster, separat zu
 entscheidender Schritt — kein Nachrüsten "nebenbei".
+
+**Zur Entscheidung (Policy-Ausnahme, bewusst nicht eingeplant):** „Stashen und
+wechseln" als sichere Alternative zu „Änderungen verwerfen und wechseln" im
+Branch-Wechsel-Dialog (#23). Wäre eine schreibende Operation (`git stash push`)
+und braucht daher wie #10/#23 eine eigene, ausdrückliche Entscheidung. Reines
+Anzeigen von Stashes bleibt #13.
 
 **Ausnahme seit v1.6:** Lokale Branches erstellen (als Tracking-Branch beim Auschecken
 eines Remote-Branches) und löschen (`git branch -d`/`-D`) sind jetzt erlaubt — rein

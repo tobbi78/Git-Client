@@ -10,7 +10,7 @@ import Foundation
 
 nonisolated enum BranchParser {
 
-    /// Parst `git for-each-ref --format="%(refname)\t%(objectname)\t%(HEAD)\t%(upstream:short)\t%(upstream:track,nobracket)"`.
+    /// Parst `git for-each-ref --format="%(refname)\t%(objectname)\t%(HEAD)\t%(upstream:short)\t%(upstream:track,nobracket)\t%(committerdate:unix)"`.
     static func parseBranches(from output: String) -> [Branch] {
         output.components(separatedBy: "\n")
             .filter { !$0.isEmpty }
@@ -23,6 +23,9 @@ nonisolated enum BranchParser {
                 // Tracking-Felder defensiv lesen — ältere Zeilen (< 5 Felder) bleiben nil
                 let upstreamShort = fields.count >= 4 ? fields[3] : ""
                 let trackString   = fields.count >= 5 ? fields[4] : ""
+                let lastCommitDate = fields.count >= 6
+                    ? TimeInterval(fields[5]).map { Date(timeIntervalSince1970: $0) }
+                    : nil
 
                 if refname.hasPrefix("refs/heads/") {
                     let name = String(refname.dropFirst("refs/heads/".count))
@@ -32,7 +35,8 @@ nonisolated enum BranchParser {
                     return Branch(name: name, shortName: name, isCurrent: isCurrent,
                                   isRemote: false, remoteName: nil, tipSha: sha,
                                   upstreamName: hasUpstream ? upstreamShort : nil,
-                                  ahead: tracking?.ahead, behind: tracking?.behind)
+                                  ahead: tracking?.ahead, behind: tracking?.behind,
+                                  lastCommitDate: lastCommitDate)
                 }
 
                 if refname.hasPrefix("refs/remotes/") {
@@ -46,7 +50,8 @@ nonisolated enum BranchParser {
                         : remoteRef
                     return Branch(name: remoteRef, shortName: shortName, isCurrent: false,
                                   isRemote: true, remoteName: remoteName, tipSha: sha,
-                                  upstreamName: nil, ahead: nil, behind: nil)
+                                  upstreamName: nil, ahead: nil, behind: nil,
+                                  lastCommitDate: lastCommitDate)
                 }
 
                 return nil

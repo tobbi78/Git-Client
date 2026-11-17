@@ -18,5 +18,8 @@ nonisolated struct Branch: Identifiable, Hashable, Sendable {
     let ahead: Int?            // lokale Commits vor dem Upstream (nil = kein Upstream)
     let behind: Int?           // Upstream-Commits, die lokal fehlen (nil = kein Upstream)
 
+    // Committer-Datum des Branch-Spitzen-Commits (nil, wenn nicht ermittelbar)
+    var lastCommitDate: Date? = nil
+
     var id: String { name }
 }

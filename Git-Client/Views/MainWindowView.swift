@@ -903,9 +903,17 @@ private struct BranchRowView: View {
                     .help("Upstream: \(branch.upstreamName!) · \(a) voraus, \(b) hinterher")
                 }
             }
-            Text(String(branch.tipSha.prefix(7)))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(String(branch.tipSha.prefix(7)))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                if let date = branch.lastCommitDate {
+                    Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .help("Letzte Änderung: \(date.formatted(date: .abbreviated, time: .shortened))")
+                }
+            }
         }
         .contextMenu {
             Button {

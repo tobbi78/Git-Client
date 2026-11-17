@@ -142,7 +142,8 @@ struct GitResult {
     </tr>
     <tr>
         <td><code>loadBranches()</code></td>
-        <td><code>git for-each-ref refs/heads refs/remotes</code></td>
+        <td><code>git for-each-ref refs/heads refs/remotes</code> (inkl.
+            <code>%(committerdate:unix)</code> für das Datum der Branch-Spitze)</td>
         <td><code>[Branch]</code></td>
     </tr>
     <tr>

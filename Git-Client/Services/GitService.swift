@@ -132,7 +132,7 @@ actor GitService {
 
     func loadBranches() async throws -> [Branch] {
         // Felder: refname, SHA, HEAD-Marker, Upstream-Kurzname, Tracking-Info
-        let format = "%(refname)\t%(objectname)\t%(HEAD)\t%(upstream:short)\t%(upstream:track,nobracket)"
+        let format = "%(refname)\t%(objectname)\t%(HEAD)\t%(upstream:short)\t%(upstream:track,nobracket)\t%(committerdate:unix)"
         let output = try await runner.runOrThrow(
             ["for-each-ref", "--format=\(format)", "refs/heads", "refs/remotes"],
             workingDirectory: repositoryPath

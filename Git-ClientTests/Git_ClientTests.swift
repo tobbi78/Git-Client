@@ -853,6 +853,20 @@ struct GitServiceIntegrationTests {
         #expect(allFull)
     }
 
+    @Test("loadBranches: lastCommitDate entspricht dem Datum des Spitzen-Commits")
+    func branchLastCommitDateMatchesTipCommit() async throws {
+        let svc = GitService(repositoryPath: repoURL)
+        let commits = try await svc.loadCommits()
+        let branches = try await svc.loadBranches()
+        for branch in branches {
+            let date = try #require(branch.lastCommitDate)
+            let tip = try #require(commits.first { $0.sha == branch.tipSha })
+            // Commit.date ist das Autor-Datum, lastCommitDate das Committer-Datum —
+            // bei Test-Commits ohne Rebase/Amend liegen beide praktisch gleichauf.
+            #expect(abs(date.timeIntervalSince(tip.date)) < 5)
+        }
+    }
+
     @Test("Branch-tipSha stimmt mit Commit-SHA überein")
     func branchTipMatchesCommit() async throws {
         let svc = GitService(repositoryPath: repoURL)
@@ -2400,10 +2414,10 @@ struct BranchParserTests {
 
     // MARK: parseBranches
 
-    /// Baut eine Tab-getrennte Zeile mit allen 5 Feldern
+    /// Baut eine Tab-getrennte Zeile mit allen 6 Feldern
     private func line(refname: String, sha: String = "abc1234", head: String = " ",
-                      upstream: String = "", track: String = "") -> String {
-        "\(refname)\t\(sha)\t\(head)\t\(upstream)\t\(track)"
+                      upstream: String = "", track: String = "", date: String = "") -> String {
+        "\(refname)\t\(sha)\t\(head)\t\(upstream)\t\(track)\t\(date)"
     }
 
     @Test("parseBranches parst lokalen Branch")
@@ -2539,6 +2553,38 @@ struct BranchParserTests {
         #expect(b != nil)
         #expect(b?.upstreamName == nil)
         #expect(b?.ahead == nil)
+    }
+
+    @Test("Lokaler Branch: Unix-Zeitstempel wird als lastCommitDate geparst")
+    func localBranchLastCommitDate() {
+        let b = BranchParser.parseBranches(from:
+            line(refname: "refs/heads/main", date: "1700000000")
+        ).first
+        #expect(b?.lastCommitDate == Date(timeIntervalSince1970: 1_700_000_000))
+    }
+
+    @Test("Remote Branch: Unix-Zeitstempel wird als lastCommitDate geparst")
+    func remoteBranchLastCommitDate() {
+        let b = BranchParser.parseBranches(from:
+            line(refname: "refs/remotes/origin/main", date: "1700000000")
+        ).first
+        #expect(b?.lastCommitDate == Date(timeIntervalSince1970: 1_700_000_000))
+    }
+
+    @Test("Leeres oder ungültiges Datumsfeld → lastCommitDate nil")
+    func invalidDateFieldGivesNil() {
+        let empty = BranchParser.parseBranches(from: line(refname: "refs/heads/a", date: "")).first
+        let garbage = BranchParser.parseBranches(from: line(refname: "refs/heads/b", date: "n/a")).first
+        #expect(empty != nil && empty?.lastCommitDate == nil)
+        #expect(garbage != nil && garbage?.lastCommitDate == nil)
+    }
+
+    @Test("Rückwärtskompatibilität: 5-Feld-Zeile ohne Datum → lastCommitDate nil")
+    func fiveFieldLineHasNoDate() {
+        let input = "refs/heads/main\tabc1234\t*\torigin/main\tahead 1"
+        let b = BranchParser.parseBranches(from: input).first
+        #expect(b?.ahead == 1)
+        #expect(b?.lastCommitDate == nil)
     }
 
     @Test("refs/remotes/origin/HEAD wird übersprungen")

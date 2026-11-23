@@ -16,6 +16,17 @@ nonisolated enum PendingBranchDeletion: Equatable, Sendable {
     case confirmForce(Branch)   // nicht gemerged → Force-Löschen-Abfrage
 }
 
+/// Fehler des Vergleichs-Sheets, die nicht von git selbst stammen.
+nonisolated enum CompareError: Error, LocalizedError {
+    case unknownRef(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unknownRef(let ref): return "„\(ref)“ ist kein bekannter Branch, Tag oder Commit."
+        }
+    }
+}
+
 @Observable
 @MainActor
 final class RepositoryViewModel {
@@ -145,6 +156,17 @@ final class RepositoryViewModel {
             Task { await loadFileHistoryDiff() }
         }
     }
+
+    // MARK: - Vergleich
+    var showCompareSheet = false
+    var compareBase = ""
+    var compareTarget = ""
+    /// true → `base...target` (seit gemeinsamem Vorfahren), false → `base target` (direkt).
+    var compareSinceMergeBase = true
+    private(set) var compareDiff: CommitDiff? = nil
+    private(set) var compareResolved: (base: String, target: String)? = nil
+    var isCompareLoading = false
+    var compareError: String? = nil
 
     /// true, während ein nicht geladener Commit gesucht und nachgeladen wird.
     var isRevealingCommit = false
@@ -695,6 +717,58 @@ final class RepositoryViewModel {
         guard selectedFileHistorySha == sha else { return }
         fileHistoryDiff = diff
         isFileHistoryDiffLoading = false
+    }
+
+    // MARK: - Vergleich
+
+    /// Öffnet das Vergleichs-Sheet. Basis ist der aktuelle Branch, Ziel der übergebene Ref.
+    func requestCompare(target: String? = nil) {
+        compareBase = branches.first(where: \.isCurrent)?.name ?? "HEAD"
+        compareTarget = target ?? ""
+        compareDiff = nil
+        compareResolved = nil
+        compareError = nil
+        showCompareSheet = true
+        if target != nil { Task { await runCompare() } }
+    }
+
+    /// Löst beide Seiten auf und lädt den Diff.
+    func runCompare() async {
+        let base = compareBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = compareTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sinceMergeBase = compareSinceMergeBase
+        guard !base.isEmpty, !target.isEmpty else { return }
+        isCompareLoading = true
+        compareError = nil
+        defer { isCompareLoading = false }
+        do {
+            // `--quiet` liefert bei unbekanntem Ref keine stderr-Meldung → eigener Text.
+            guard let baseSha = try? await service.resolveCommit(base) else {
+                throw CompareError.unknownRef(base)
+            }
+            guard let targetSha = try? await service.resolveCommit(target) else {
+                throw CompareError.unknownRef(target)
+            }
+            let diff = try await service.compareDiff(
+                base: baseSha, target: targetSha, sinceMergeBase: sinceMergeBase)
+            // Eingabe wurde zwischenzeitlich geändert → veraltetes Ergebnis verwerfen.
+            guard compareBase.trimmingCharacters(in: .whitespacesAndNewlines) == base,
+                  compareTarget.trimmingCharacters(in: .whitespacesAndNewlines) == target,
+                  compareSinceMergeBase == sinceMergeBase else { return }
+            compareDiff = diff
+            compareResolved = (baseSha, targetSha)
+        } catch {
+            guard compareBase.trimmingCharacters(in: .whitespacesAndNewlines) == base,
+                  compareTarget.trimmingCharacters(in: .whitespacesAndNewlines) == target else { return }
+            compareDiff = nil
+            compareResolved = nil
+            compareError = error.localizedDescription
+        }
+    }
+
+    func swapCompareSides() {
+        swap(&compareBase, &compareTarget)
+        Task { await runCompare() }
     }
 
     /// Schließt Historie (und ggf. das darunterliegende Blame-Sheet) und springt zum Commit.

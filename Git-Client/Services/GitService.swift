@@ -451,6 +451,32 @@ actor GitService {
         return DiffParser.parse(output, sha: sha)
     }
 
+    /// Löst einen Ref (Branch, Tag, SHA, `HEAD`) zur vollen Commit-SHA auf. Wirft, wenn der
+    /// Ref unbekannt ist. `--end-of-options` verhindert, dass Eingaben mit führendem `-`
+    /// als Option interpretiert werden.
+    func resolveCommit(_ ref: String) async throws -> String {
+        let output = try await runner.runOrThrow(
+            ["rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"],
+            workingDirectory: repositoryPath
+        )
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Diff zwischen zwei bereits aufgelösten Ständen. `sinceMergeBase` → `base...target`
+    /// (Änderungen auf `target` seit dem gemeinsamen Vorfahren), sonst `base target`
+    /// (direkter Vergleich der beiden Stände).
+    func compareDiff(base: String, target: String, sinceMergeBase: Bool) async throws -> CommitDiff {
+        var args = ["diff", "-M", "--no-color", "--no-ext-diff"]
+        if sinceMergeBase {
+            args.append("\(base)...\(target)")
+        } else {
+            args += [base, target]
+        }
+        args.append("--")
+        let output = try await runner.runOrThrow(args, workingDirectory: repositoryPath)
+        return DiffParser.parse(output, sha: "\(base)...\(target)")
+    }
+
     // MARK: - Blame
 
     /// Gibt die zeilenweise Autorschaft der Datei `path` im Zustand des Commits `sha` zurück.

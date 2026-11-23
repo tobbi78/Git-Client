@@ -5836,3 +5836,127 @@ struct NewsDisplayTests {
         #expect(news.summary == "Neue lokale Commits · 2 Branches auf dem Server voraus")
     }
 }
+
+@Suite("Vergleich — GitService und ViewModel")
+@MainActor
+struct CompareRefsTests {
+
+    private func write(_ url: URL, _ name: String, _ text: String) throws {
+        try text.write(to: url.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    }
+
+    private func commitAll(_ url: URL, _ message: String) throws {
+        try sh("git", "-C", url.path, "add", "-A")
+        try sh("git", "-C", url.path, "commit", "-m", message)
+    }
+
+    private func body() -> String {
+        (1...10).map { "Zeile \($0)" }.joined(separator: "\n") + "\n"
+    }
+
+    /// `main` und `feature` zweigen von einem gemeinsamen Commit ab.
+    /// main: + m.txt · feature: + f.txt, old.txt → renamed.txt · Tag `v1` auf dem Feature-Tip.
+    private func makeDivergedRepo() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("compare-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try sh("git", "-C", url.path, "init")
+        try sh("git", "-C", url.path, "config", "user.email", "cmp@test.com")
+        try sh("git", "-C", url.path, "config", "user.name", "CmpTester")
+        try write(url, "old.txt", body())
+        try commitAll(url, "base")
+        try sh("git", "-C", url.path, "branch", "-M", "main")
+        try sh("git", "-C", url.path, "checkout", "-b", "feature")
+        try write(url, "f.txt", "feature\n")
+        try sh("git", "-C", url.path, "mv", "old.txt", "renamed.txt")
+        // Mit Inhaltsänderung: reine Umbenennungen ohne Hunks verwirft der DiffParser.
+        try write(url, "renamed.txt", body().replacingOccurrences(of: "Zeile 5", with: "geändert"))
+        try commitAll(url, "feature work")
+        try sh("git", "-C", url.path, "tag", "v1")
+        try sh("git", "-C", url.path, "checkout", "main")
+        try write(url, "m.txt", "main\n")
+        try commitAll(url, "main work")
+        return url
+    }
+
+    @Test("A...B zeigt nur die Änderungen seit der Abzweigung")
+    func threeDot() async throws {
+        let url = try makeDivergedRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+        let diff = try await svc.compareDiff(base: "main", target: "feature", sinceMergeBase: true)
+        #expect(Set(diff.files.map(\.newPath)) == ["f.txt", "renamed.txt"])
+        #expect(diff.files.first { $0.newPath == "renamed.txt" }?.changeType == .renamed)
+    }
+
+    @Test("A..B vergleicht beide Stände direkt")
+    func twoDot() async throws {
+        let url = try makeDivergedRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+        let diff = try await svc.compareDiff(base: "main", target: "feature", sinceMergeBase: false)
+        #expect(Set(diff.files.map(\.displayName)) ==
+                ["/dev/null → f.txt", "old.txt → renamed.txt", "m.txt → /dev/null"])
+        #expect(diff.files.first { $0.oldPath == "m.txt" }?.isDeleted == true)
+    }
+
+    @Test("Gleiche Stände ergeben keine Unterschiede")
+    func identical() async throws {
+        let url = try makeDivergedRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+        let diff = try await svc.compareDiff(base: "main", target: "main", sinceMergeBase: true)
+        #expect(diff.files.isEmpty)
+    }
+
+    @Test("resolveCommit: Branch, Tag, Kurz-SHA; unbekannt und Option-Eingabe werfen")
+    func resolve() async throws {
+        let url = try makeDivergedRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let svc = GitService(repositoryPath: url)
+        let feature = try await svc.resolveCommit("feature")
+        #expect(feature.count == 40)
+        #expect(try await svc.resolveCommit("v1") == feature)
+        #expect(try await svc.resolveCommit(String(feature.prefix(8))) == feature)
+        await #expect(throws: (any Error).self) { try await svc.resolveCommit("gibt-es-nicht") }
+        await #expect(throws: (any Error).self) { try await svc.resolveCommit("--all") }
+    }
+
+    @Test("requestCompare(target:) nimmt den aktuellen Branch als Basis und lädt den Diff")
+    func viewModelCompare() async throws {
+        let url = try makeDivergedRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let vm = RepositoryViewModel(repository: RepositoryBookmark(name: "C", path: url))
+        await vm.load()
+
+        vm.requestCompare(target: "feature")
+        #expect(vm.showCompareSheet)
+        #expect(vm.compareBase == "main")
+        for _ in 0..<100 {
+            if vm.compareDiff != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(Set(try #require(vm.compareDiff).files.map(\.newPath)) == ["f.txt", "renamed.txt"])
+        #expect(vm.compareResolved != nil)
+        #expect(vm.compareError == nil)
+    }
+
+    @Test("Ungültiger Ref setzt compareError; swap tauscht die Seiten")
+    func viewModelErrorAndSwap() async throws {
+        let url = try makeDivergedRepo()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let vm = RepositoryViewModel(repository: RepositoryBookmark(name: "C", path: url))
+        await vm.load()
+
+        vm.requestCompare()
+        vm.compareTarget = "gibt-es-nicht"
+        await vm.runCompare()
+        #expect(vm.compareError != nil)
+        #expect(vm.compareDiff == nil)
+
+        vm.compareTarget = "feature"
+        vm.swapCompareSides()
+        #expect(vm.compareBase == "feature")
+        #expect(vm.compareTarget == "main")
+    }
+}

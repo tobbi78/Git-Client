@@ -80,6 +80,13 @@ struct MainWindowView: View {
                 .help("Repository-Statistiken in einem neuen Fenster anzeigen")
             }
             ToolbarItem(placement: .primaryAction) {
+                Button("Vergleichen…", systemImage: "arrow.left.arrow.right") {
+                    vm?.requestCompare()
+                }
+                .disabled(vm?.isLoading ?? true)
+                .help("Zwei Branches, Tags oder Commits vergleichen")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button("Im Terminal öffnen", systemImage: "terminal") {
                     TerminalService.open(directory: repository.path)
                 }
@@ -103,6 +110,12 @@ struct MainWindowView: View {
                 .disabled(vm?.isLoading ?? true)
                 .help("Commits, Branches und Tags neu laden")
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { vm?.showCompareSheet ?? false },
+            set: { vm?.showCompareSheet = $0 }
+        )) {
+            compareSheet
         }
         // Fenster beim Öffnen eines Repositories auf Mindestgröße bringen.
         // .frame(minWidth:) auf einem nicht-root-View erzwingt keine Fenster-Vergrößerung;
@@ -280,7 +293,8 @@ struct MainWindowView: View {
                 displayName: leaf.displayName,
                 canDelete: !leaf.branch.isCurrent && localBranchCount > 1,
                 onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } },
-                onDelete: { Task { await vm?.requestDeleteBranch(leaf.branch) } }
+                onDelete: { Task { await vm?.requestDeleteBranch(leaf.branch) } },
+onCompare: { vm?.requestCompare(target: leaf.branch.name) }
             )
                 .contentShape(Rectangle())
                 .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
@@ -292,7 +306,8 @@ struct MainWindowView: View {
                         displayName: leaf.displayName,
                         canDelete: !leaf.branch.isCurrent && localBranchCount > 1,
                         onCheckout: { Task { await vm?.requestCheckout(leaf.branch) } },
-                        onDelete: { Task { await vm?.requestDeleteBranch(leaf.branch) } }
+                        onDelete: { Task { await vm?.requestDeleteBranch(leaf.branch) } },
+onCompare: { vm?.requestCompare(target: leaf.branch.name) }
                     )
                         .contentShape(Rectangle())
                         .onTapGesture { vm?.selectCommit(bySha: leaf.branch.tipSha) }
@@ -319,6 +334,11 @@ struct MainWindowView: View {
                                 ClipboardService.copy(tag.name)
                             } label: {
                                 Label("Tag-Namen kopieren", systemImage: "doc.on.doc")
+                            }
+                            Button {
+                                vm?.requestCompare(target: tag.name)
+                            } label: {
+                                Label("Mit aktuellem Branch vergleichen", systemImage: "arrow.left.arrow.right")
                             }
                         }
                 }
@@ -702,7 +722,7 @@ struct MainWindowView: View {
                             graphColumnDivider
 
                             // BESCHREIBUNGS-SPALTE: füllt den restlichen Platz
-                            CommitRowView(commit: row.commit)
+                            CommitRowView(commit: row.commit, onCompare: { vm.requestCompare(target: row.commit.sha) })
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 6)
                         }
@@ -778,6 +798,27 @@ struct MainWindowView: View {
     }
 
     // MARK: - Detail / Diff
+
+    private var compareSheet: some View {
+        let branches = vm?.branches ?? []
+        return CompareView(
+            base: Binding(get: { vm?.compareBase ?? "" }, set: { vm?.compareBase = $0 }),
+            target: Binding(get: { vm?.compareTarget ?? "" }, set: { vm?.compareTarget = $0 }),
+            sinceMergeBase: Binding(
+                get: { vm?.compareSinceMergeBase ?? true },
+                set: { vm?.compareSinceMergeBase = $0 }
+            ),
+            localBranches: branches.filter { !$0.isRemote }.map(\.name),
+            remoteBranches: branches.filter(\.isRemote).map(\.name),
+            tags: (vm?.tags ?? []).map(\.name),
+            resolved: vm?.compareResolved,
+            diff: vm?.compareDiff,
+            isLoading: vm?.isCompareLoading ?? false,
+            error: vm?.compareError,
+            onCompare: { Task { await vm?.runCompare() } },
+            onSwap: { vm?.swapCompareSides() }
+        )
+    }
 
     private var fileHistorySheet: some View {
         FileHistoryView(
@@ -873,6 +914,7 @@ private struct BranchRowView: View {
     var canDelete: Bool = false
     var onCheckout: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
+    var onCompare: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -934,6 +976,13 @@ private struct BranchRowView: View {
                     Label("Lokalen Branch erstellen und auschecken", systemImage: "arrow.triangle.branch")
                 }
             }
+            if !branch.isCurrent {
+                Button {
+                    onCompare?()
+                } label: {
+                    Label("Mit aktuellem Branch vergleichen", systemImage: "arrow.left.arrow.right")
+                }
+            }
             if canDelete {
                 Divider()
                 Button(role: .destructive) {
@@ -950,6 +999,7 @@ private struct BranchRowView: View {
 
 private struct CommitRowView: View {
     let commit: Commit
+    var onCompare: (() -> Void)? = nil
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -990,6 +1040,11 @@ private struct CommitRowView: View {
                 ClipboardService.copy(commit.subject)
             } label: {
                 Label("Commit-Nachricht kopieren", systemImage: "doc.on.doc")
+            }
+            Button {
+                onCompare?()
+            } label: {
+                Label("Mit aktuellem Branch vergleichen", systemImage: "arrow.left.arrow.right")
             }
         }
     }

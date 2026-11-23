@@ -31,6 +31,7 @@
         <li><a href="#diff">Diff ansehen</a></li>
         <li><a href="#blame">Blame-Ansicht</a></li>
         <li><a href="#dateihistorie">Datei-Historie</a></li>
+        <li><a href="#vergleich">Stände vergleichen</a></li>
         <li><a href="#statistiken">Statistiken</a></li>
         <li><a href="#reload">Neu laden</a></li>
         <li><a href="#autorefresh">Automatische Erkennung neuer Commits</a></li>
@@ -481,6 +482,35 @@
     wird die Liste dafür automatisch nachgeladen; eine aktive Suche wird dabei
     zurückgesetzt.
 </p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2 id="vergleich">Stände vergleichen</h2>
+<p>
+    Der Vergleich zeigt, was sich zwischen <strong>zwei beliebigen Ständen</strong>
+    (Branch, Tag oder Commit) geändert hat – etwa zwischen <code>main</code> und einem
+    Feature-Branch. Angezeigt werden Dateiliste und Diff wie im Commit-Detail.
+</p>
+
+<h3>Öffnen</h3>
+<ul>
+    <li>Toolbar-Button <strong>„Vergleichen…"</strong>: Basis ist der aktuelle Branch,
+        das Ziel wählst du im Fenster.</li>
+    <li>Rechtsklick auf einen Branch, Tag oder Commit →
+        <strong>„Mit aktuellem Branch vergleichen"</strong>.</li>
+</ul>
+
+<h3>Bedienung</h3>
+<p>
+    Basis (A) und Ziel (B) lassen sich über das Menü (HEAD, Branches, Tags) wählen oder
+    als Name bzw. SHA eintippen (⏎ startet den Vergleich). Der Button ⇄ tauscht beide Seiten.
+    Der Schalter legt die Art des Vergleichs fest:
+</p>
+<ul>
+    <li><strong>Seit Abzweigung (A...B)</strong> – nur die Änderungen auf B seit dem
+        gemeinsamen Vorfahren, wie in einem Pull Request (Standard).</li>
+    <li><strong>Direkt (A..B)</strong> – Vergleich der beiden Stände Datei für Datei;
+        enthält auch Änderungen, die nur auf A passiert sind (umgekehrt dargestellt).</li>
+</ul>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <h2 id="statistiken">Statistiken</h2>

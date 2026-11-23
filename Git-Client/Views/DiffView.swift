@@ -13,8 +13,6 @@ struct DiffView: View {
     let diff: CommitDiff?
     let isLoading: Bool
 
-    @State private var selectedFileID: Int? = nil
-
     /// Wird aufgerufen, wenn der Nutzer „Blame anzeigen" im Kontextmenü wählt.
     var onBlameRequest: ((String) -> Void)? = nil
 
@@ -52,7 +50,12 @@ struct DiffView: View {
                 ProgressView("Diff wird geladen…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let diff {
-                diffContent(diff)
+                DiffFilesView(
+                    diff: diff,
+                    onBlameRequest: onBlameRequest,
+                    onRevealInFinder: onRevealInFinder,
+                    onFileHistoryRequest: onFileHistoryRequest
+                )
             } else {
                 ContentUnavailableView(
                     "Kein Diff verfügbar",
@@ -120,10 +123,21 @@ struct DiffView: View {
             }
         }
     }
+}
 
-    // MARK: - Diff-Inhalt (Dateiliste + Patch)
+// MARK: - Dateiliste + Patch (auch vom Vergleichs-Sheet genutzt)
 
-    private func diffContent(_ diff: CommitDiff) -> some View {
+struct DiffFilesView: View {
+    let diff: CommitDiff
+
+    @State private var selectedFileID: Int? = nil
+
+    /// Kontextmenü-Aktionen der Dateiliste; ohne Callback entfällt der jeweilige Eintrag.
+    var onBlameRequest: ((String) -> Void)? = nil
+    var onRevealInFinder: ((String) -> Void)? = nil
+    var onFileHistoryRequest: ((String) -> Void)? = nil
+
+    var body: some View {
         HSplitView {
             fileList(diff.files)
                 .frame(minWidth: 180, idealWidth: 220, maxWidth: 260)
